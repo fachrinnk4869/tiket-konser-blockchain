@@ -5,19 +5,42 @@ import requests
 import logging
 
 
+class Transaction:
+    def __init__(self, sender, receiver, amount):
+        self.sender = sender
+        self.receiver = receiver
+        self.amount = amount
+
+    def to_dict(self):
+        return vars(self)
+
+
 class Block:
-    def __init__(self, index, previous_hash, timestamp, data, hash, nonce=0):
+    def __init__(self, index, previous_hash, timestamp, transactions, hash, nonce=0):
         self.index = index
         self.previous_hash = previous_hash
         self.timestamp = timestamp
-        self.data = data
+        self.transactions = transactions  # List of Transaction objects
         self.hash = hash
         self.nonce = nonce
+
+    def to_dict(self):
+        # Convert transactions to dict format
+        block_data = {
+            "index": self.index,
+            "previous_hash": self.previous_hash,
+            "timestamp": self.timestamp,
+            "transactions": [t.to_dict() for t in self.transactions],
+            "hash": self.hash,
+            "nonce": self.nonce
+        }
+        return block_data
 
 
 class Blockchain:
     def __init__(self, difficulty=4):
         self.chain = []
+        self.current_transactions = []  # Transactions waiting to be added
         self.longest_chain = []  # To store the longest valid chain
         self.nodes = set(["node1:5000", "node2:5000", "node3:5000"])
         self.difficulty = difficulty
@@ -35,10 +58,15 @@ class Blockchain:
             ]
         )
 
+    def create_transaction(self, sender, receiver, amount):
+        transaction = Transaction(sender, receiver, amount)
+        self.current_transactions.append(transaction)
+        return transaction
+
     def create_genesis_block(self):
         # Create the first block (genesis block)
-        genesis_block = Block(0, "0", int(time.time()), "Genesis Block", self.hash_block(
-            0, "0", int(time.time()), "Genesis Block", 0), 0)
+        genesis_block = Block(0, "0", int(time.time()), [], self.hash_block(
+            0, "0", int(time.time()), [], 0), 0)
         self.chain.append(genesis_block)
         self.longest_chain = self.chain
         logging.info(f"genesis longest chain: {self.longest_chain}")
@@ -48,7 +76,7 @@ class Blockchain:
         Returns the longest chain. If this node's chain is corrupted, it will try to fetch
         the longest chain from other nodes.
         """
-        return [vars(block) for block in self.longest_chain]
+        return [block.to_dict() for block in self.longest_chain]
 
     def compare_and_replace_chain(self, new_chain):
         """
@@ -57,16 +85,27 @@ class Blockchain:
         """
         logging.info(new_chain)
         if len(new_chain) > len(self.chain):
-            self.chain = [Block(**block) if isinstance(block, dict)
-                          else block for block in new_chain]
+            # Iterate through the new_chain and correctly initialize the Block objects
+            self.chain = [
+                Block(
+                    # Unpack other fields
+                    **{key: value for key, value in block.items() if key != 'transactions'},
+                    # Properly instantiate the transactions
+                    transactions=[Transaction(t)
+                                  for t in block.get('transactions', [])]
+                ) if isinstance(block, dict) else block
+                for block in new_chain
+            ]
             self.longest_chain = new_chain  # Update the longest chain
             logging.warning(
                 "Replaced local chain with a longer chain from another node.")
             return True
         return False
 
-    def hash_block(self, index, previous_hash, timestamp, data, nonce):
-        block_string = f"{index}{previous_hash}{data}{nonce}"
+    def hash_block(self, index, previous_hash, timestamp, transactions, nonce):
+        transactions_data = json.dumps(
+            [t.to_dict() for t in transactions], sort_keys=True)
+        block_string = f"{index}{previous_hash}{transactions_data}{nonce}"
         return hashlib.sha256(block_string.encode('utf-8')).hexdigest()
 
     def proof_of_work(self, index, previous_hash, timestamp, data):
@@ -78,17 +117,19 @@ class Blockchain:
                 return hash_attempt, nonce
             nonce += 1
 
-    def add_block(self, data):
+    def add_block(self):
         previous_block = self.chain[-1]
         timestamp = int(time.time())
         new_index = len(self.chain)
 
         # Find a valid hash and nonce using proof of work
         hash_result, nonce = self.proof_of_work(
-            new_index, previous_block.hash, timestamp, data)
+            new_index, previous_block.hash, timestamp, self.current_transactions)
 
         new_block = Block(new_index, previous_block.hash,
-                          timestamp, data, hash_result, nonce)
+                          timestamp, self.current_transactions, hash_result, nonce)
+        # Reset the list of current transactions
+        self.current_transactions = []
         try:
             self.broadcast_new_block(new_block)
             return new_block  # Return the block itself for API response
@@ -109,7 +150,7 @@ class Blockchain:
 
             # Validate that the current block's hash is correct
             if current_block.hash != self.hash_block(current_block.index, current_block.previous_hash,
-                                                     current_block.timestamp, current_block.data, current_block.nonce):
+                                                     current_block.timestamp, current_block.transactions, current_block.nonce):
                 logging.error(
                     f"Blockchain invalid! Block {current_block.index} has an incorrect hash.")
                 return False
@@ -130,7 +171,8 @@ class Blockchain:
         if block.previous_hash != previous_block.hash:
             return False
         # Check that the block hash is correct and meets difficulty requirements
-        if block.hash != self.hash_block(block.index, block.previous_hash, block.timestamp, block.data, block.nonce):
+        block.transactions = [Transaction(**t) for t in block.transactions]
+        if block.hash != self.hash_block(block.index, block.previous_hash, block.timestamp, block.transactions, block.nonce):
             return False
         if block.hash[:self.difficulty] != "0" * self.difficulty:
             return False
@@ -150,7 +192,7 @@ class Blockchain:
 
                 # Simulate sending the new block
                 response = requests.post(
-                    f'http://{node}/validate_block', json={'block': vars(new_block)})
+                    f'http://{node}/validate_block', json={'block': new_block.to_dict()})
 
                 if response.status_code == 200:
                     logging.info(f"Successfully broadcasted to node {node}")
@@ -162,10 +204,10 @@ class Blockchain:
                 logging.error(f"Failed to contact node {node}. Error: {e}")
 
     def get_chain(self):
-        return [vars(block) for block in self.chain]
+        return [block.to_dict() for block in self.chain]
 
     def __repr__(self):
-        return json.dumps([vars(block) for block in self.chain], indent=4)
+        return json.dumps([block.to_dict() for block in self.chain], indent=4)
 
     def add_node(self, node_url):
         self.nodes.add(node_url)
