@@ -84,23 +84,24 @@ class Blockchain:
         If the new chain is longer and valid, replace the current chain with it.
         """
         logging.info(new_chain)
+        
         if len(new_chain) > len(self.chain):
-            # Iterate through the new_chain and correctly initialize the Block objects
+            # Convert the new chain blocks to Block objects, with proper Transaction instantiation
             self.chain = [
                 Block(
-                    # Unpack other fields
-                    **{key: value for key, value in block.items() if key != 'transactions'},
-                    # Properly instantiate the transactions
-                    transactions=[Transaction(t)
-                                  for t in block.get('transactions', [])]
-                ) if isinstance(block, dict) else block
+                    **{key: value for key, value in block.items() if key != 'transactions'},  # Unpack block fields except 'transactions'
+                    transactions=[
+                        Transaction(**t) if isinstance(t, dict) else t for t in block.get('transactions', [])
+                    ]  # Ensure each transaction is a Transaction object
+                ) if isinstance(block, dict) else block 
                 for block in new_chain
             ]
+            
             self.longest_chain = new_chain  # Update the longest chain
-            logging.warning(
-                "Replaced local chain with a longer chain from another node.")
+            logging.warning("Replaced local chain with a longer chain from another node.")
             return True
         return False
+
 
     def hash_block(self, index, previous_hash, timestamp, transactions, nonce):
         transactions_data = json.dumps(
