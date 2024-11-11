@@ -32,7 +32,7 @@ This project demonstrates a basic blockchain implementation using Flask for API 
 3. Confirm that the nodes are running by checking the Docker logs:
 
    ```bash
-   docker-compose logs -f
+   docker compose logs -f
    ```
 
 ### Endpoints
@@ -166,7 +166,7 @@ This sequence showcases a typical workflow for adding, modifying, and recovering
 ### Additional Notes
 
 - **Network Setup**: Docker Compose handles networking automatically. Each node runs in its own container and communicates via internal Docker networking.
-- **Logs**: To view detailed logs for debugging or monitoring purposes, run `docker-compose logs -f`.
+- **Logs**: To view detailed logs for debugging or monitoring purposes, run `docker compose logs -f`.
 
 ### Stopping the Network
 
