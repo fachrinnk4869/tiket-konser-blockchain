@@ -254,5 +254,11 @@ def get_balance():
     return jsonify({"balance": balance}), 200
 
 
+@ app.route("/get_seatEvent", methods=["GET"])
+def get_seatEvent():
+    seat, event = blockchain.get_seatEvent(owner)
+    return jsonify({"seat": seat, "event": event}), 200
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
