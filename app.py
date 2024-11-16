@@ -1,9 +1,54 @@
+import os
 from flask import Flask, jsonify, request
 import logging
 from blockchain import Block, Blockchain, Transaction
 import requests
+from flask import Flask, request, jsonify
+from Crypto.PublicKey import RSA
+from wallet import Owner, Transaction
+from transaction.transaction_input import TransactionInput
+from transaction.transaction_output import TransactionOutput
+
 app = Flask(__name__)
 blockchain = Blockchain(difficulty=4)  # Set difficulty level for proof of work
+# Generate RSA keys for the owner (Alice) on app startup
+rsa_key_dir = '/rsa_keys/'  # Path inside the container's volume
+
+if not os.path.exists(rsa_key_dir):
+    os.makedirs(rsa_key_dir)
+
+private_key_path = os.path.join(rsa_key_dir, 'private_key.pem')
+public_key_path = os.path.join(rsa_key_dir, 'public_key.pem')
+# Check if keys already exist
+if not os.path.exists(private_key_path) or not os.path.exists(public_key_path):
+    # Generate RSA keys
+    private_key = RSA.generate(2048)
+    public_key = private_key.publickey()
+
+    # Save private key
+    with open(private_key_path, 'wb') as private_file:
+        private_file.write(private_key.export_key())
+
+    # Save public key
+    with open(public_key_path, 'wb') as public_file:
+        public_file.write(public_key.export_key())
+
+    print("Keys generated and saved.")
+else:
+    print("Keys already exist, loading from files.")
+
+# Load the saved keys on app startup
+with open(private_key_path, 'rb') as private_file:
+    private_key = RSA.import_key(private_file.read())
+
+with open(public_key_path, 'rb') as public_file:
+    public_key = RSA.import_key(public_file.read())
+
+# Example: Alice object
+owner = Owner(public_key_hex=public_key.export_key().decode(
+    'utf-8'), private_key=private_key)
+print(f"Private key: {private_key}")
+print(f"Public key: {owner.public_key_hex}")
 
 
 @app.route('/', methods=['GET'])
@@ -22,9 +67,11 @@ def add_block():
 @app.route('/validate_block', methods=['POST'])
 def validate_block():
     block_data = request.json.get('block')
+    utxo_pool = request.json.get('utxo_pool')
     block = Block(**block_data)
+    # logging.WARNING(f"halo {block}")
 
-    if blockchain.validate_block(block):
+    if blockchain.validate_block(block, utxo_pool):
         return jsonify({"message": "Block is valid"}), 200
     return jsonify({"message": "Invalid block"}), 400
 
@@ -115,25 +162,96 @@ def fix_blockchain():
     return jsonify({"message": "Blockchain is already valid."}), 200
 
 
-@app.route('/add_transaction', methods=['POST'])
-def add_transaction():
-    data = request.json
+@app.route("/create_transaction", methods=["POST"])
+def create_transaction():
+    data = request.get_json()
 
-    # Ensure all necessary data is provided
-    required_fields = ['sender', 'receiver', 'amount']
-    if not all(field in data for field in required_fields):
-        return jsonify({"error": "Transaction data is incomplete"}), 400
+    # Extract transaction details from the request body
+    outputs_data = data.get("outputs", [])
 
-    # Dynamically create the transaction
-    transaction = blockchain.create_transaction(**data)
+    # Create the inputs
+    inputs = []
+    try:
+        # Get the previous transaction hash for the input owner
+        # Ensure this key is provided in the request
+        previous_index, previous_transaction_hash = blockchain.get_last_transaction_for_owner(
+            owner.public_key_hex)
 
-    return jsonify({"message": "Transaction added", "transaction": transaction.to_dict()}), 201
+        if not previous_transaction_hash:
+            transaction_input = TransactionInput(
+                transaction_hash="genesis",
+                output_index="genesis"
+            )
+        else:
+            transaction_input = TransactionInput(
+                transaction_hash=previous_transaction_hash,
+                output_index=previous_index
+            )
+        inputs.append(transaction_input)
+    except KeyError:
+        return jsonify({"status": "error", "message": "Invalid input format"}), 400
+
+    outputs = []
+    for output_data in outputs_data:
+        node = output_data["node"]
+        response = requests.get(
+            f'http://{node}:5000/get_public_key')
+        if response.status_code == 200:  # Ensure the request was successful
+            try:
+                data = response.json()  # Parse the JSON content
+                # Extract the desired key
+                transaction_output = TransactionOutput(
+                    public_key_hash=data['public_key_hex'],
+                    amount=output_data["amount"],
+                    seat=output_data.get("seat"),
+                    event=output_data.get("event")
+                )
+            except ValueError:
+                print("Response is not valid JSON.")
+            except KeyError:
+                print("Key 'public_key_hash' not found in the response.")
+        else:
+            print(
+                f"Request failed with status code {response.status_code}")
+        outputs.append(transaction_output)
+
+    # Create the transaction
+    transaction = Transaction(owner=owner, inputs=inputs, outputs=outputs)
+    transaction.tx_id = transaction.generate_tx_id()
+    # Sign the transaction
+    transaction.sign()
+
+    # Add the transaction to the blockchain
+    blockchain.add_transaction_to_block(transaction)
+
+    return jsonify({"status": "success", "message": "Transaction created and added to the blockchain"}), 201
 
 
 @app.route('/get_longest_chain', methods=['GET'])
 def get_longest_chain():
     # Return the longest valid chain this node knows about
     return jsonify({"chain": blockchain.get_longest_chain()}), 200
+
+
+@app.route('/get_public_key', methods=['GET'])
+def get_public_key_hash():
+    # Call the method to get the public key hash
+    public_key_hash = owner.to_dict()
+
+    # Return it as a JSON response
+    return jsonify(public_key_hash), 200
+
+
+@ app.route("/get_utxo_pool", methods=["GET"])
+def get_utxo_pool():
+    utxo_pool = blockchain.get_utxo_pool()
+    return jsonify(utxo_pool), 200
+
+
+@ app.route("/get_balance", methods=["GET"])
+def get_balance():
+    balance = blockchain.get_balance(owner)
+    return jsonify({"balance": balance}), 200
 
 
 if __name__ == '__main__':
