@@ -102,6 +102,8 @@ Below is a list of the main endpoints you can interact with:
            {
              "sender": "Alice",
              "receiver": "Bob",
+             "seat": "Bob",
+             "event": "Bob",
              "amount": 0
            }
          ]

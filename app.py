@@ -118,14 +118,15 @@ def fix_blockchain():
 @app.route('/add_transaction', methods=['POST'])
 def add_transaction():
     data = request.json
-    sender = data.get('sender')
-    receiver = data.get('receiver')
-    amount = data.get('amount')
 
-    if not sender or not receiver or amount is None:
+    # Ensure all necessary data is provided
+    required_fields = ['sender', 'receiver', 'amount']
+    if not all(field in data for field in required_fields):
         return jsonify({"error": "Transaction data is incomplete"}), 400
 
-    transaction = blockchain.create_transaction(sender, receiver, amount)
+    # Dynamically create the transaction
+    transaction = blockchain.create_transaction(**data)
+
     return jsonify({"message": "Transaction added", "transaction": transaction.to_dict()}), 201
 
 
