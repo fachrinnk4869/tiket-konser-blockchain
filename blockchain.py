@@ -122,8 +122,8 @@ class Blockchain:
         :param transaction: The transaction to add to the blockchain.
         """
         # Add the outputs to the UTXO pool
-        for i, output in enumerate(transaction.outputs):
-            self.utxo_pool[f"{transaction.tx_id}:{i}"] = output
+        for output in transaction.outputs:
+            self.utxo_pool[f"{transaction.tx_id}:{output.ticket}"] = output
 
         # Remove the spent UTXOs from the UTXO pool
         for input_tx in transaction.inputs:
@@ -151,7 +151,7 @@ class Blockchain:
         for block in reversed(self.chain):
             for transaction in block.transactions:
                 # Check if the owner matches in the outputs
-                for i, output in enumerate(transaction.outputs):
+                for output in transaction.outputs:
                     if output.public_key_hash == owner:
                         return output.ticket, transaction.tx_id
         return None, None  # Return None if no transaction is found

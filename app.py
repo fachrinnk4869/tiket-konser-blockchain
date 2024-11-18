@@ -304,7 +304,7 @@ def get_seatEvent():
     # Lists to store the associated seats and events
 
     # Iterate over the UTXO pool and filter based on the owner's public key hash
-    seat, event = None, None
+    seats, events = [], []
     for output in blockchain.utxo_pool.values():
         if output.public_key_hash == owner.public_key_hex:
             # Add the seat and event associated with this UTXO output
@@ -323,11 +323,13 @@ def get_seatEvent():
 
                     if result:
                         seat, event = result  # Assign hasil query ke variabel seat dan event
+                        seats.append(seat)
+                        events.append(event)
 
                 except sqlite3.Error as e:
                     print(f"Database error: {e}")
 
-    return jsonify({"seat": seat, "event": event}), 200
+    return jsonify({"seat": seats, "event": events}), 200
 
 
 if __name__ == '__main__':
