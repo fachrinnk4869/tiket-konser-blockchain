@@ -142,7 +142,7 @@ class Blockchain:
         """
         return sum(output.amount for output in self.utxo_pool.values() if output.public_key_hash == owner.public_key_hex)
 
-    def get_last_transaction_for_owner(self, owner):
+    def get_last_transaction_ticket(self, owner, ticket):
         """
         Retrieve the last transaction for a specific owner.
         This assumes that transactions are stored in the blockchain blocks.
@@ -152,7 +152,7 @@ class Blockchain:
             for transaction in block.transactions:
                 # Check if the owner matches in the outputs
                 for output in transaction.outputs:
-                    if output.public_key_hash == owner:
+                    if output.public_key_hash == owner and output.ticket == ticket:
                         return output.ticket, transaction.tx_id
         return None, None  # Return None if no transaction is found
 

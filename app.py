@@ -9,6 +9,7 @@ from wallet import Owner, Transaction
 from transaction.transaction_input import TransactionInput
 from transaction.transaction_output import TransactionOutput
 import sqlite3
+import uuid
 
 # SQLite database path
 DATABASE = 'tickets.db'
@@ -22,7 +23,13 @@ def init_db():
         cursor.execute('''CREATE TABLE IF NOT EXISTS tickets (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             event TEXT,
-                            seat TEXT
+                            seat TEXT,
+                            status TEXT
+                        )''')  # Status: "jual" or "beli"
+        cursor.execute('''CREATE TABLE IF NOT EXISTS tokens (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            token TEXT,
+                            ticket_id TEXT
                         )''')  # Status: "jual" or "beli"
         conn.commit()
 
@@ -186,7 +193,7 @@ def fix_blockchain():
 
 
 @app.route('/add_ticket', methods=['POST'])
-def sell_ticket():
+def add_ticket():
     data = request.json
     event = data.get('event')
     seat = data.get('seat')
@@ -196,11 +203,68 @@ def sell_ticket():
 
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO tickets (event, seat) VALUES (?, ?)",
+        cursor.execute("INSERT INTO tickets (event, seat, status) VALUES (?, ?, 'jual')",
                        (event, seat))
         conn.commit()
 
     return jsonify({"message": "Ticket listed for sale"}), 201
+
+
+@app.route("/buy_ticket", methods=["POST"])
+def buy_ticket():
+    data = request.get_json()
+
+    # Extract transaction details from the request body
+    ticket_id = data.get("ticket")
+    buyer_node = data.get("node")
+
+    if not ticket_id or not buyer_node:
+        return jsonify({"message": "Missing required data: ticket or node"}), 400
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+
+        # Check current status of the ticket
+        cursor.execute("SELECT status FROM tickets WHERE id = ?", (ticket_id,))
+        result = cursor.fetchone()
+
+        if not result:
+            return jsonify({"message": "Ticket not found"}), 404
+
+        current_status = result[0]
+
+        # If the ticket is already purchased
+        if current_status == "beli":
+            return jsonify({"message": "Ticket already purchased"}), 400
+        # Generate a random token
+        token_valid = str(uuid.uuid4())
+
+        # Store the token for validation in create_transaction
+        cursor.execute(
+            "INSERT INTO tokens (token, ticket_id) VALUES (?, ?)", (token_valid, ticket_id))
+        conn.commit()
+        # Proceed with the transaction
+        transaction_data = {
+            "outputs": [{
+                "node": buyer_node,
+                "amount": 50,  # Example amount
+                "ticket": ticket_id
+            }],
+            "token_valid": token_valid
+        }
+
+        # Hit /create_transaction endpoint
+        response = requests.post(
+            f"http://{buyer_node}:5000/create_transaction", json=transaction_data)
+
+        if response.status_code == 201:
+            # Update the ticket status to 'beli'
+            cursor.execute(
+                "UPDATE tickets SET status = 'beli' WHERE id = ?", (ticket_id,))
+            conn.commit()
+            return jsonify({"message": "Ticket purchased successfully"}), 200
+        else:
+            return jsonify({"message": "Transaction failed"}), 400
 
 
 @app.route("/create_transaction", methods=["POST"])
@@ -209,28 +273,52 @@ def create_transaction():
 
     # Extract transaction details from the request body
     outputs_data = data.get("outputs", [])
+    token_valid = data.get("token_valid", 1)
+
+    # Validate token
+    if not token_valid:
+        return jsonify({"status": "error", "message": "Missing token"}), 400
+
+    # Ensure this key is provided in the request
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        response = requests.get(
+            f'http://localhost:5000/get_seatEvent')
+        if response.status_code == 200:  # Ensure the request was successful
+            data = response.json()
+        # Check if the token is valid
+        cursor.execute(
+            "SELECT ticket_id FROM tokens WHERE token = ?", (token_valid,))
+        token_data = cursor.fetchone()
+        if not token_data and not data['event']:
+            return jsonify({"status": "error", "message": "Invalid token or not have event, seat available"}), 400
+        elif token_data:
+            # Delete the token after validation (one-time use)
+            cursor.execute(
+                "DELETE FROM tokens WHERE token = ?", (token_valid,))
+            conn.commit()
 
     # Create the inputs
     inputs = []
-    try:
-        # Get the previous transaction hash for the input owner
-        # Ensure this key is provided in the request
-        previous_index, previous_transaction_hash = blockchain.get_last_transaction_for_owner(
-            owner.public_key_hex)
+    for output_data in outputs_data:
+        try:
+            # Get the previous transaction hash for the input owner
+            previous_index, previous_transaction_hash = blockchain.get_last_transaction_ticket(
+                owner.public_key_hex, output_data.get("ticket"))
 
-        if not previous_transaction_hash:
-            transaction_input = TransactionInput(
-                transaction_hash="genesis",
-                output_index="genesis"
-            )
-        else:
-            transaction_input = TransactionInput(
-                transaction_hash=previous_transaction_hash,
-                output_index=previous_index
-            )
-        inputs.append(transaction_input)
-    except KeyError:
-        return jsonify({"status": "error", "message": "Invalid input format"}), 400
+            if not previous_index or not previous_transaction_hash:
+                transaction_input = TransactionInput(
+                    transaction_hash="genesis",
+                    output_index="genesis"
+                )
+            else:
+                transaction_input = TransactionInput(
+                    transaction_hash=previous_transaction_hash,
+                    output_index=previous_index
+                )
+            inputs.append(transaction_input)
+        except KeyError:
+            return jsonify({"status": "error", "message": "Invalid input format"}), 400
 
     outputs = []
     for output_data in outputs_data:
@@ -264,7 +352,7 @@ def create_transaction():
     # Add the transaction to the blockchain
     blockchain.add_transaction_to_block(transaction)
 
-    return jsonify({"status": "success", "message": "Transaction created and added to the blockchain"}), 201
+    return jsonify({"status": "success", "message": "Transaction created"}), 201
 
 
 @app.route('/get_longest_chain', methods=['GET'])
