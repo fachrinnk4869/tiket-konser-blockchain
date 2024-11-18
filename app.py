@@ -11,6 +11,8 @@ from transaction.transaction_output import TransactionOutput
 
 app = Flask(__name__)
 blockchain = Blockchain(difficulty=4)  # Set difficulty level for proof of work
+# Load blockchain data on startup
+blockchain.load_from_file()
 # Generate RSA keys for the owner (Alice) on app startup
 rsa_key_dir = '/rsa_keys/'  # Path inside the container's volume
 
@@ -80,6 +82,7 @@ def validate_block():
 def mine_block():
     new_block = blockchain.add_block()
     if new_block:
+        blockchain.save_to_file()
         return jsonify({"message": "Block mined", "block": new_block.to_dict()}), 201
     return jsonify({"message": "Mining failed"}), 400
 

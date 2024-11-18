@@ -3,6 +3,7 @@ import time
 import json
 import requests
 import logging
+import os
 import json
 import binascii
 from Crypto.Hash import SHA256
@@ -50,9 +51,60 @@ class Blockchain:
         self.nodes = set(["node1:5000", "node2:5000", "node3:5000"])
         self.difficulty = difficulty
         self.utxo_pool = {}
-        self.create_genesis_block()
+
         # A set to store other node URLs
         self.setup_logging()
+        # Path untuk menyimpan file blockchain
+        self.file_path = 'blockchain.json'
+
+    def save_to_file(self):
+        """Save the blockchain to a file."""
+        with open(self.file_path, 'w') as file:
+            data = {
+                "chain": [block.to_dict() for block in self.chain],
+                "difficulty": self.difficulty,
+                "utxo_pool": self.utxo_pool
+            }
+            json.dump(data, file, cls=CustomJSONEncoder)
+        print("Blockchain saved to file.")
+
+    def load_from_file(self):
+        """Load the blockchain from a file."""
+        if os.path.exists(self.file_path):
+            with open(self.file_path, 'r') as file:
+                data = json.load(file)
+
+                self.chain = [Block(
+                    index=block_data["index"],
+                    previous_hash=block_data["previous_hash"],
+                    timestamp=block_data["timestamp"],
+                    hash=block_data["hash"],
+                    nonce=block_data["nonce"],
+                    transactions=[
+                        Transaction(
+                            owner=Owner(
+                                public_key_hex=t["owner"]["public_key_hex"],
+                                private_key=None  # Jika private_key tidak diperlukan
+                            ),
+                            inputs=[TransactionInput(**input_data)
+                                    for input_data in t["inputs"]],
+                            outputs=[TransactionOutput(
+                                **output_data) for output_data in t["outputs"]],
+                            tx_id=t["tx_id"]
+                        )
+                        for t in block_data["transactions"]
+                    ]
+                ) for block_data in data["chain"]]
+
+                self.difficulty = data["difficulty"]
+
+                self.utxo_pool = self.deserialize_utxo_pool(data["utxo_pool"])
+
+            print("Blockchain loaded from file.")
+
+        else:
+            self.create_genesis_block()
+            print("No blockchain file found. Starting with a new blockchain.")
 
     def setup_logging(self):
         logging.basicConfig(
