@@ -8,6 +8,27 @@ from Crypto.PublicKey import RSA
 from wallet import Owner, Transaction
 from transaction.transaction_input import TransactionInput
 from transaction.transaction_output import TransactionOutput
+import sqlite3
+
+# SQLite database path
+DATABASE = 'tickets.db'
+
+# Initialize database if not exists
+
+
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS tickets (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            event TEXT,
+                            seat TEXT
+                        )''')  # Status: "jual" or "beli"
+        conn.commit()
+
+
+# Call init_db on app startup
+init_db()
 
 app = Flask(__name__)
 blockchain = Blockchain(difficulty=4)  # Set difficulty level for proof of work
@@ -49,7 +70,6 @@ with open(public_key_path, 'rb') as public_file:
 # Example: Alice object
 owner = Owner(public_key_hex=public_key.export_key().decode(
     'utf-8'), private_key=private_key)
-print(f"Private key: {private_key}")
 print(f"Public key: {owner.public_key_hex}")
 
 
@@ -165,6 +185,24 @@ def fix_blockchain():
     return jsonify({"message": "Blockchain is already valid."}), 200
 
 
+@app.route('/add_ticket', methods=['POST'])
+def sell_ticket():
+    data = request.json
+    event = data.get('event')
+    seat = data.get('seat')
+
+    if not all([owner, event, seat]):
+        return jsonify({"message": "Missing required fields"}), 400
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO tickets (event, seat) VALUES (?, ?)",
+                       (event, seat))
+        conn.commit()
+
+    return jsonify({"message": "Ticket listed for sale"}), 201
+
+
 @app.route("/create_transaction", methods=["POST"])
 def create_transaction():
     data = request.get_json()
@@ -206,8 +244,7 @@ def create_transaction():
                 transaction_output = TransactionOutput(
                     public_key_hash=data['public_key_hex'],
                     amount=output_data["amount"],
-                    seat=output_data.get("seat"),
-                    event=output_data.get("event")
+                    ticket=output_data.get("ticket"),
                 )
             except ValueError:
                 print("Response is not valid JSON.")
@@ -245,21 +282,51 @@ def get_public_key_hash():
     return jsonify(public_key_hash), 200
 
 
-@ app.route("/get_utxo_pool", methods=["GET"])
+@app.route("/get_utxo_pool", methods=["GET"])
 def get_utxo_pool():
     utxo_pool = blockchain.get_utxo_pool()
     return jsonify(utxo_pool), 200
 
 
-@ app.route("/get_balance", methods=["GET"])
+@app.route("/get_balance", methods=["GET"])
 def get_balance():
     balance = blockchain.get_balance(owner)
     return jsonify({"balance": balance}), 200
 
 
-@ app.route("/get_seatEvent", methods=["GET"])
+@app.route("/get_seatEvent", methods=["GET"])
 def get_seatEvent():
-    seat, event = blockchain.get_seatEvent(owner)
+    """
+    Calculate the balance for a given public key hash by summing all unspent outputs.
+    :param public_key_hash: The public key hash to check balance for.
+    :return: The total balance.
+    """
+    # Lists to store the associated seats and events
+
+    # Iterate over the UTXO pool and filter based on the owner's public key hash
+    seat, event = None, None
+    for output in blockchain.utxo_pool.values():
+        if output.public_key_hash == owner.public_key_hex:
+            # Add the seat and event associated with this UTXO output
+            # Assuming `seat` is an attribute in TransactionOutput
+            with sqlite3.connect(DATABASE) as conn:
+                cursor = conn.cursor()
+                try:
+                    # Query untuk mencari UTXO yang cocok berdasarkan public_key_hash
+                    query = """
+                    SELECT seat, event
+                    FROM tickets
+                    WHERE id = ?
+                    """
+                    cursor.execute(query, (output.ticket,))
+                    result = cursor.fetchone()
+
+                    if result:
+                        seat, event = result  # Assign hasil query ke variabel seat dan event
+
+                except sqlite3.Error as e:
+                    print(f"Database error: {e}")
+
     return jsonify({"seat": seat, "event": event}), 200
 
 

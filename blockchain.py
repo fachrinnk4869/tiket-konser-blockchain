@@ -142,26 +142,6 @@ class Blockchain:
         """
         return sum(output.amount for output in self.utxo_pool.values() if output.public_key_hash == owner.public_key_hex)
 
-    def get_seatEvent(self, owner):
-        """
-        Calculate the balance for a given public key hash by summing all unspent outputs.
-        :param public_key_hash: The public key hash to check balance for.
-        :return: The total balance.
-        """
-        # Lists to store the associated seats and events
-
-        # Iterate over the UTXO pool and filter based on the owner's public key hash
-        seat, event = None, None
-        for output in self.utxo_pool.values():
-            if output.public_key_hash == owner.public_key_hex:
-                # Add the seat and event associated with this UTXO output
-                # Assuming `seat` is an attribute in TransactionOutput
-                seat = output.seat
-                # Assuming `event` is an attribute in TransactionOutput
-                event = output.event
-
-        return seat, event
-
     def get_last_transaction_for_owner(self, owner):
         """
         Retrieve the last transaction for a specific owner.
@@ -173,7 +153,7 @@ class Blockchain:
                 # Check if the owner matches in the outputs
                 for i, output in enumerate(transaction.outputs):
                     if output.public_key_hash == owner:
-                        return i, transaction.tx_id
+                        return output.ticket, transaction.tx_id
         return None, None  # Return None if no transaction is found
 
     def get_utxo_pool(self):
