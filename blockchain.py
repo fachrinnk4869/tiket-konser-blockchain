@@ -48,7 +48,6 @@ class Blockchain:
         self.chain = []
         self.current_transactions = []  # Transactions waiting to be added
         self.longest_chain = []  # To store the longest valid chain
-        self.nodes = set(["node1:5000", "node2:5000", "node3:5000"])
         self.difficulty = difficulty
         self.utxo_pool = {}
 

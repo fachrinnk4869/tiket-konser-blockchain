@@ -7,7 +7,7 @@ WORKDIR /app
 
 
 # Install Flask and requests for HTTP communication
-RUN pip install --no-cache-dir flask requests pycryptodome
+RUN pip install --no-cache-dir flask requests pycryptodome flask_bcrypt cryptography
 
 # Expose port 5000
 EXPOSE 5000
