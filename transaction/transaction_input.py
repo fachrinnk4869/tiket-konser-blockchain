@@ -1,7 +1,9 @@
 import json
 
+from interface import ClassInterface
 
-class TransactionInput:
+
+class TransactionInput(ClassInterface):
     def __init__(self, transaction_hash: str, output_index: int, public_key: str = "", signature: str = ""):
         self.transaction_hash = transaction_hash
         self.output_index = output_index
@@ -21,6 +23,15 @@ class TransactionInput:
                 "transaction_hash": self.transaction_hash,
                 "output_index": self.output_index
             })
+
+    @classmethod
+    def to_class(cls, data):
+        return cls(
+            transaction_hash=data['tx_id'],
+            output_index=data['ticket_id'],
+            public_key=data['public_key_hash'],
+            signature=data['signature'],
+        )
 
     def to_dict(self):
         return {

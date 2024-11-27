@@ -1,8 +1,10 @@
-from flask import Blueprint, jsonify, request
+import logging
+from flask import Blueprint, jsonify, request, session
 from blockchain import Block, Blockchain, Transaction
 import requests
 from transaction.transaction_input import TransactionInput
 from transaction.transaction_output import TransactionOutput
+from wallet import Owner
 import sqlite3
 import uuid
 
@@ -26,6 +28,64 @@ def validate_block():
     return jsonify({"message": "Invalid block"}), 400
 
 
+@blockchain_bp.route('/get_user', methods=['GET'])
+def get_user():
+    owner = session.get('owner')
+    return jsonify({"owner": owner}), 200
+
+
+@blockchain_bp.route('/add_ticket', methods=['POST'])
+def add_ticket():
+    data = request.get_json()
+    ticket_details = data.get('ticket_details')
+    event = ticket_details.get('event')
+    seat = ticket_details.get('seat')
+    owner_id = ticket_details.get('owner')
+    logging.warning(f"halo {ticket_details}")
+    if not ticket_details:
+        return jsonify({"message": "Missing required data: ticket_details or node"}), 400
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+
+        # Insert the new ticket into the database
+        cursor.execute('INSERT INTO tickets (event, seat, status) VALUES (?, ?, ?)',
+                       (event, seat, 'jual'))
+        conn.commit()
+        ticket_id = cursor.lastrowid
+
+        # Create the transaction inputs and outputs
+        inputs = []
+        outputs = [{
+            "amount": 50,  # Example amount
+            "ticket": ticket_id,
+            "public_key_hash": Owner.get_public_key(owner_id)
+        }]
+        # to class
+        outputs = [TransactionOutput.to_class(output) for output in outputs]
+
+        # Create the transaction
+        logging.warning(f"halo {session}")
+        transaction = Transaction(
+            owner=Owner.get_public_key(owner_id), inputs=inputs, outputs=outputs, owner_id=owner_id)
+        transaction.tx_id = transaction.generate_tx_id()
+        transaction.sign()
+
+        # Add the transaction to the blockchain
+        blockchain.add_transaction_to_block(transaction)
+
+        # Mine a new block
+        new_block = blockchain.add_block()
+        if new_block:
+            blockchain.save_to_file()
+            return jsonify({"message": "Ticket added and block mined", "block": new_block.to_dict()}), 201
+        else:
+            # If mining fails, delete the ticket from the database
+            cursor.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
+            conn.commit()
+            return jsonify({"message": "Mining failed, ticket removed"}), 400
+
+
 @blockchain_bp.route('/mine_block', methods=['POST'])
 def mine_block():
     new_block = blockchain.add_block()
@@ -38,58 +98,53 @@ def mine_block():
 @blockchain_bp.route("/buy_ticket", methods=["POST"])
 def buy_ticket():
     data = request.get_json()
+    ticket_id = data.get("ticket_id")
+    buyer_id = session.get('owner')
 
-    # Extract transaction details from the request body
-    ticket_id = data.get("ticket")
-    buyer_node = data.get("node")
-
-    if not ticket_id or not buyer_node:
-        return jsonify({"message": "Missing required data: ticket or node"}), 400
+    if not ticket_id or not buyer_id:
+        return jsonify({"message": "Missing required data: ticket_id or buyer_id"}), 400
 
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
 
-        # Check current status of the ticket
+        # Check if the ticket exists and is available for sale
         cursor.execute("SELECT status FROM tickets WHERE id = ?", (ticket_id,))
-        result = cursor.fetchone()
+        ticket = cursor.fetchone()
+        if not ticket or ticket[0] != 'jual':
+            return jsonify({"message": "Ticket not available for sale"}), 400
 
-        if not result:
-            return jsonify({"message": "Ticket not found"}), 404
-
-        current_status = result[0]
-
-        # If the ticket is already purchased
-        if current_status == "beli":
-            return jsonify({"message": "Ticket already purchased"}), 400
-        # Generate a random token
-        token_valid = str(uuid.uuid4())
-
-        # Store the token for validation in create_transaction
-        cursor.execute(
-            "INSERT INTO tokens (token, ticket_id) VALUES (?, ?)", (token_valid, ticket_id))
+        # Update the ticket status to 'sold' and assign it to the buyer
+        cursor.execute("UPDATE tickets SET status = ?, owner_id = ? WHERE id = ?",
+                       ('sold', buyer_id, ticket_id))
         conn.commit()
-        # Proceed with the transaction
-        transaction_data = {
-            "outputs": [{
-                "node": buyer_node,
-                "amount": 50,  # Example amount
-                "ticket": ticket_id
-            }],
-            "token_valid": token_valid
-        }
 
-        # Hit /create_transaction endpoint
-        response = requests.post(
-            f"http://{buyer_node}:5000/create_transaction", json=transaction_data)
+        # Create the transaction outputs
+        outputs = [{
+            "amount": 50,  # Example amount
+            "ticket": ticket_id,
+            "public_key_hash": Owner.get_public_key(buyer_id)
+        }]
+        outputs = [TransactionOutput.to_class(output) for output in outputs]
 
-        if response.status_code == 201:
-            # Update the ticket status to 'beli'
-            cursor.execute(
-                "UPDATE tickets SET status = 'beli' WHERE id = ?", (ticket_id,))
-            conn.commit()
-            return jsonify({"message": "Ticket purchased successfully"}), 200
+        # Create the transaction without signature
+        transaction = Transaction(
+            owner=Owner.get_public_key(buyer_id), inputs=[], outputs=outputs, owner_id=buyer_id)
+        transaction.tx_id = transaction.generate_tx_id()
+
+        # Add the transaction to the blockchain
+        blockchain.add_transaction_to_block(transaction)
+
+        # Mine a new block
+        new_block = blockchain.add_block()
+        if new_block:
+            blockchain.save_to_file()
+            return jsonify({"message": "Ticket purchased and block mined", "block": new_block.to_dict()}), 201
         else:
-            return jsonify({"message": "Transaction failed"}), 400
+            # If mining fails, revert the ticket status
+            cursor.execute(
+                "UPDATE tickets SET status = ? WHERE id = ?", ('jual', ticket_id))
+            conn.commit()
+            return jsonify({"message": "Mining failed, ticket status reverted"}), 400
 
 
 @blockchain_bp.route("/create_transaction", methods=["POST"])

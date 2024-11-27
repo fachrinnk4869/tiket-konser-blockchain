@@ -1,15 +1,7 @@
-from flask import Flask, jsonify, request
-from blockchain import Block, Blockchain, Transaction
-import requests
-from flask import Flask, request, jsonify
-from wallet import Owner, Transaction
-from flask_bcrypt import Bcrypt
-from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
-import sqlite3
-import uuid
-from route.auth import auth_bp, init_db, owner
 from route.blockchain_transaction import blockchain_bp, blockchain
+from route.auth import auth_bp, init_db
+import sqlite3
+from flask import Flask, jsonify, request, session
 
 
 # SQLite database path
@@ -19,11 +11,20 @@ DATABASE = 'tickets.db'
 
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'super_secure'
 app.register_blueprint(auth_bp, url_prefix='/auth')
 app.register_blueprint(blockchain_bp, url_prefix='/blockchain')
 
 
-init_db()
+@app.route('/init', methods=['GET'])
+def init():
+    return init_db()
+
+
+@app.route('/get_user', methods=['GET'])
+def get_user():
+    owner = session.get('owner')
+    return jsonify({"owner": owner}), 200
 
 
 @app.route('/', methods=['GET'])
@@ -34,6 +35,7 @@ def get_blockchain():
 @app.route('/get_public_key', methods=['GET'])
 def get_public_key_hash():
     # Call the method to get the public key hash
+    owner = session.get('owner', None)
     public_key_hash = owner.to_dict()
 
     # Return it as a JSON response
@@ -48,6 +50,7 @@ def get_utxo_pool():
 
 @app.route("/get_balance", methods=["GET"])
 def get_balance():
+    owner = session.get('owner', None)
     balance = blockchain.get_balance(owner)
     return jsonify({"balance": balance}), 200
 
@@ -59,9 +62,11 @@ def get_seatEvent():
     :param public_key_hash: The public key hash to check balance for.
     :return: The total balance.
     """
-    # Lists to store the associated seats and events
+    owner = session.get('owner', None)
+    if not owner:
+        return jsonify({"error": "Owner not found in session"}), 400
 
-    # Iterate over the UTXO pool and filter based on the owner's public key hash
+    # Lists to store the associated seats and events
     seats, events = [], []
     for output in blockchain.utxo_pool.values():
         if output.public_key_hash == owner.public_key_hex:

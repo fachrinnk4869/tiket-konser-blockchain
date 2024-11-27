@@ -11,6 +11,7 @@ from Crypto.Signature import pkcs1_15
 from transaction.transaction_input import TransactionInput
 from transaction.transaction_output import TransactionOutput
 from wallet import Owner, Transaction
+from interface import BlockchainInterface, ClassInterface
 
 
 class CustomJSONEncoder(json.JSONEncoder):
@@ -21,7 +22,7 @@ class CustomJSONEncoder(json.JSONEncoder):
         return super().default(obj)  # For other objects, use the default serialization
 
 
-class Block:
+class Block(ClassInterface):
     def __init__(self, index, previous_hash, timestamp, transactions, hash, nonce=0):
         self.index = index
         self.previous_hash = previous_hash
@@ -42,19 +43,33 @@ class Block:
         }
         return block_data
 
+    @classmethod
+    def to_class(cls, data):
+        transactions = [Transaction.to_class(t) for t in data["transactions"]]
+        return cls(
+            index=data["index"],
+            previous_hash=data["previous_hash"],
+            timestamp=data["timestamp"],
+            hash=data["hash"],
+            nonce=data["nonce"],
+            transactions=transactions
+        )
 
-class Blockchain:
+
+class Blockchain(BlockchainInterface):
     def __init__(self, difficulty=2):
         self.chain = []
         self.current_transactions = []  # Transactions waiting to be added
         self.longest_chain = []  # To store the longest valid chain
         self.difficulty = difficulty
         self.utxo_pool = {}
+        self.nodes = set(["node1:5000"])
 
         # A set to store other node URLs
         self.setup_logging()
         # Path untuk menyimpan file blockchain
         self.file_path = 'blockchain.json'
+        self.load_from_file()
 
     def save_to_file(self):
         """Save the blockchain to a file."""
@@ -73,27 +88,29 @@ class Blockchain:
             with open(self.file_path, 'r') as file:
                 data = json.load(file)
 
-                self.chain = [Block(
-                    index=block_data["index"],
-                    previous_hash=block_data["previous_hash"],
-                    timestamp=block_data["timestamp"],
-                    hash=block_data["hash"],
-                    nonce=block_data["nonce"],
-                    transactions=[
-                        Transaction(
-                            owner=Owner(
-                                public_key_hex=t["owner"]["public_key_hex"],
-                                private_key=None  # Jika private_key tidak diperlukan
-                            ),
-                            inputs=[TransactionInput(**input_data)
-                                    for input_data in t["inputs"]],
-                            outputs=[TransactionOutput(
-                                **output_data) for output_data in t["outputs"]],
-                            tx_id=t["tx_id"]
-                        )
-                        for t in block_data["transactions"]
-                    ]
-                ) for block_data in data["chain"]]
+                # self.chain = [Block(
+                #     index=block_data["index"],
+                #     previous_hash=block_data["previous_hash"],
+                #     timestamp=block_data["timestamp"],
+                #     hash=block_data["hash"],
+                #     nonce=block_data["nonce"],
+                #     transactions=[
+                #         Transaction(
+                #             owner=Owner(
+                #                 public_key_hex=t["owner"]["public_key_hex"],
+                #                 private_key=None  # Jika private_key tidak diperlukan
+                #             ),
+                #             inputs=[TransactionInput(**input_data)
+                #                     for input_data in t["inputs"]],
+                #             outputs=[TransactionOutput(
+                #                 **output_data) for output_data in t["outputs"]],
+                #             tx_id=t["tx_id"]
+                #         )
+                #         for t in block_data["transactions"]
+                #     ]
+                # ) for block_data in data["chain"]]
+                self.chain = [Block.to_class(block_data)
+                              for block_data in data["chain"]]
 
                 self.difficulty = data["difficulty"]
 
@@ -186,32 +203,6 @@ class Blockchain:
         """
         return [block.to_dict() for block in self.longest_chain]
 
-    def compare_and_replace_chain(self, new_chain):
-        """
-        Compares the current chain with the new chain from another node.
-        If the new chain is longer and valid, replace the current chain with it.
-        """
-        logging.info(new_chain)
-
-        if len(new_chain) > len(self.chain):
-            # Convert the new chain blocks to Block objects, with proper Transaction instantiation
-            self.chain = [
-                Block(
-                    # Unpack block fields except 'transactions'
-                    **{key: value for key, value in block.items() if key != 'transactions'},
-                    transactions=[
-                        Transaction(**t) if isinstance(t, dict) else t for t in block.get('transactions', [])
-                    ]  # Ensure each transaction is a Transaction object
-                ) if isinstance(block, dict) else block
-                for block in new_chain
-            ]
-
-            self.longest_chain = new_chain  # Update the longest chain
-            logging.warning(
-                "Replaced local chain with a longer chain from another node.")
-            return True
-        return False
-
     def hash_block(self, index, previous_hash, nonce):
         block_string = f"{index}{previous_hash}{nonce}"
         return hashlib.sha256(block_string.encode('utf-8')).hexdigest()
@@ -239,8 +230,8 @@ class Blockchain:
         # Reset the list of current transactions
         self.current_transactions = []
         try:
-            self.broadcast_new_block(new_block, self.utxo_pool)
-            return new_block  # Return the block itself for API response
+            if self.broadcast_new_block(new_block, self.utxo_pool):
+                return new_block
         except requests.exceptions.RequestException as e:
             return None
 
@@ -308,16 +299,7 @@ class Blockchain:
         #     logging.warning(f" {t}")
         # block.transactions = [Transaction(**t) for t in block.transactions]
         block.transactions = [
-            Transaction(
-                # Pass private_key or None if not needed
-                owner=Owner(public_key_hex=t["owner"]
-                            ["public_key_hex"], private_key=None),
-                inputs=[TransactionInput(**input_data)
-                        for input_data in t["inputs"]],
-                outputs=[TransactionOutput(**output_data)
-                         for output_data in t["outputs"]],
-                tx_id=t["tx_id"]
-            )
+            Transaction.to_class(t)
             for t in block.transactions
         ]
         if block.hash != self.hash_block(block.index, block.previous_hash, block.nonce):
@@ -342,16 +324,18 @@ class Blockchain:
 
                 # Simulate sending the new block
                 response = requests.post(
-                    f'http://{node}/validate_block', json={'block': new_block.to_dict(), 'utxo_pool': json.dumps(utxo_pool, cls=CustomJSONEncoder)})
+                    f'http://{node}/blockchain/validate_block', json={'block': new_block.to_dict(), 'utxo_pool': json.dumps(utxo_pool, cls=CustomJSONEncoder)})
 
                 if response.status_code == 200:
                     logging.info(f"Successfully broadcasted to node {node}")
                 else:
                     logging.error(
                         f"Error broadcasting to {node}, Status Code: {response.status_code}")
-
+                    return False
             except requests.exceptions.RequestException as e:
                 logging.error(f"Failed to contact node {node}. Error: {e}")
+                return False
+        return True
 
     def get_chain(self):
         return [block.to_dict() for block in self.chain]
