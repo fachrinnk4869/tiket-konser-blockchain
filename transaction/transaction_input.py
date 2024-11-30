@@ -14,13 +14,11 @@ class TransactionInput(ClassInterface):
         self.public_key = public_key
         self.signature = signature
 
-    def sign_transaction_input(input_utxo, private_key):
+    def sign_transaction_input(self, private_key_object):
         # Hash the input UTXO data
-        input_data = json.dumps(input_utxo, sort_keys=True).encode('utf-8')
+        input_data = json.dumps(
+            self.transaction_hash, sort_keys=True).encode('utf-8')
         hashed_data = SHA256.new(input_data)
-
-        # Load the private key
-        private_key_object = RSA.import_key(private_key)
 
         # Sign the hash
         signature = pkcs1_15.new(private_key_object).sign(hashed_data)
@@ -28,10 +26,11 @@ class TransactionInput(ClassInterface):
         # Return the signature (hex-encoded)
         return signature.hex()
 
-    def validate_transaction_input(input_utxo, public_key, signature):
+    def validate_transaction_input(self, public_key, signature):
         try:
             # Hash the input UTXO data
-            input_data = json.dumps(input_utxo, sort_keys=True).encode('utf-8')
+            input_data = json.dumps(
+                self.transaction_hash, sort_keys=True).encode('utf-8')
             hashed_data = SHA256.new(input_data)
 
             # Load the public key

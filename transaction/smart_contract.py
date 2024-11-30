@@ -64,6 +64,9 @@ class SmartContract:
                 # transaction[4] is the price
                 if int(amount) >= int(transaction[4]):
                     cursor.execute("""
+                        UPDATE tickets SET status = 'available' WHERE id = ?
+                    """, (id,))  # transaction[0] is the id
+                    cursor.execute("""
                         UPDATE transactions SET status = 'completed' WHERE id = ?
                     """, (transaction[0],))  # transaction[0] is the id
                     return {

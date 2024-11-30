@@ -31,7 +31,8 @@ def init_db():
                             event TEXT,
                             seat TEXT,
                             price INTEGER,
-                            status TEXT
+                            status TEXT,
+                            sign TEXT
                         )''')  # Status: "jual" or "beli"
         cursor.execute('''CREATE TABLE IF NOT EXISTS tokens (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,

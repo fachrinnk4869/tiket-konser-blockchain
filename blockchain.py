@@ -48,6 +48,9 @@ class Block(ClassInterface):
         }
         return block_data
 
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
     @classmethod
     def to_class(cls, data):
         transactions = [Transaction.to_class(t) for t in data["transactions"]]
@@ -92,28 +95,6 @@ class Blockchain(BlockchainInterface):
         if os.path.exists(self.file_path):
             with open(self.file_path, 'r') as file:
                 data = json.load(file)
-
-                # self.chain = [Block(
-                #     index=block_data["index"],
-                #     previous_hash=block_data["previous_hash"],
-                #     timestamp=block_data["timestamp"],
-                #     hash=block_data["hash"],
-                #     nonce=block_data["nonce"],
-                #     transactions=[
-                #         Transaction(
-                #             owner=Owner(
-                #                 public_key_hex=t["owner"]["public_key_hex"],
-                #                 private_key=None  # Jika private_key tidak diperlukan
-                #             ),
-                #             inputs=[TransactionInput(**input_data)
-                #                     for input_data in t["inputs"]],
-                #             outputs=[TransactionOutputTicket(
-                #                 **output_data) for output_data in t["outputs"]],
-                #             tx_id=t["tx_id"]
-                #         )
-                #         for t in block_data["transactions"]
-                #     ]
-                # ) for block_data in data["chain"]]
                 self.chain = [Block.to_class(block_data)
                               for block_data in data["chain"]]
 
@@ -161,7 +142,15 @@ class Blockchain(BlockchainInterface):
         :param public_key_hash: The public key hash to check balance for.
         :return: The total balance.
         """
-        return sum(output.amount for output in self.utxo_pool.values() if output.public_key_hash == owner.public_key_hex)
+        return sum(int(output.amount) for output in self.utxo_pool.values() if output.public_key_hash == owner and isinstance(output, TransactionOutputBalance))
+
+    def get_tickets(self, owner) -> int:
+        """
+        Calculate the balance for a given public key hash by summing all unspent outputs.
+        :param public_key_hash: The public key hash to check balance for.
+        :return: The total balance.
+        """
+        return [int(output.ticket) for output in self.utxo_pool.values() if output.public_key_hash == owner and isinstance(output, TransactionOutputTicket)]
 
     def get_last_transaction_ticket(self, ticket):
         """
@@ -305,13 +294,13 @@ class Blockchain(BlockchainInterface):
         if block.previous_hash != previous_block.hash:
             return False
         # Check that the block hash is correct and meets difficulty requirements
-        # for t in block.transactions:
-        #     logging.warning(f" {t}")
-        # block.transactions = [Transaction(**t) for t in block.transactions]
-        block.transactions = [
-            Transaction.to_class(t)
-            for t in block.transactions
-        ]
+        result = requests.post(
+            f'http://localhost:5000/blockchain/validate_sign', json={'ticket_id': block.to_dict()['transactions'][0]['outputs'][0]['ticket']})
+        if result.status_code != 200 and result.status_code != 201:
+            logging.error(
+                f"Failed to validate signature for block {block.index}. Status Code: {result.status_code}")
+            return False
+
         if block.hash != self.hash_block(block.index, block.previous_hash, block.nonce):
             return False
         if block.hash[:self.difficulty] != "0" * self.difficulty:

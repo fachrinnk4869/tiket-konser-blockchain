@@ -23,7 +23,7 @@ smart_contract = SmartContract()
 def validate_block():
     block_data = request.json.get('block')
     utxo_pool = request.json.get('utxo_pool')
-    block = Block(**block_data)
+    block = Block.to_class(block_data)
     # logging.WARNING(f"halo {block}")
 
     if blockchain.validate_block(block, utxo_pool):
@@ -83,6 +83,54 @@ def add_tickets():
         return jsonify({"message": "Failed to mining"}), 200
 
 
+@blockchain_bp.route('/sell_ticket', methods=['POST'])
+def sell_ticket():
+    data = request.get_json()
+    ticket_id = data.get('ticket_id')
+
+    prev_owner, output_index, tx_id = blockchain.get_last_transaction_ticket(
+        ticket_id)
+    if not prev_owner:
+        return jsonify({"message": "Ticket not found"}), 400
+
+    # Create the transaction
+    transactionInput = TransactionInput(
+        transaction_hash=tx_id, output_index=output_index)
+    signature = transactionInput.sign_transaction_input(
+        Owner.get_private_key(session.get('owner')))
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE tickets SET sign = ?, status = 'jual' WHERE id = ?",
+                       (signature, ticket_id))
+        conn.commit()
+
+    return jsonify({"message": "Ticket listed for sale"}), 200
+
+
+@blockchain_bp.route('/validate_sign', methods=['POST'])
+def validate_sign():
+    data = request.get_json()
+    ticket_id = data.get('ticket_id')
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT sign FROM tickets WHERE id = ?", (ticket_id,))
+        result = cursor.fetchone()
+        signature = result[0]
+        if signature:
+            logging.warning(str(signature))
+            prev_owner, output_index, tx_id = blockchain.get_last_transaction_ticket(
+                ticket_id)
+            transaction_input = TransactionInput(
+                transaction_hash=tx_id, output_index=output_index)  # Dummy values for initialization
+            if transaction_input.validate_transaction_input(prev_owner, signature):
+                return jsonify({"message": "Signature is valid"}), 200
+            else:
+                return jsonify({"message": "Invalid signature"}), 400
+
+    return jsonify({"message": "Signature not yet initialized"}), 201
+
+
 @blockchain_bp.route('/add_ticket', methods=['POST'])
 def add_ticket():
     data = request.get_json()
@@ -92,6 +140,8 @@ def add_ticket():
     price = ticket_details.get('price')
     owner_id = ticket_details.get('owner')
     # logging.warning(f"halo {ticket_details}")
+    if not owner_id == 'admin':
+        return jsonify({"message": "Unauthorized access"}), 403
     if not ticket_details:
         return jsonify({"message": "Missing required data: ticket_details or node"}), 400
 
@@ -101,7 +151,7 @@ def add_ticket():
 
             # Insert the new ticket into the database
             cursor.execute('INSERT INTO tickets (event, seat, price, status) VALUES (?, ?, ?, ?)',
-                           (event, seat, price, 'jual'))
+                           (event, seat, price, 'available'))
             conn.commit()
             ticket_id = cursor.lastrowid
 
@@ -119,10 +169,8 @@ def add_ticket():
             transaction = Transaction(
                 owner=Owner.get_public_key(owner_id), inputs=inputs, outputs=outputs, owner_id=owner_id)
             transaction.tx_id = transaction.generate_tx_id()
-            transaction.sign()
 
         # Add the transaction to the blockchain
-            # logging.warning(f"halo {transaction.outputs.to_json()}")
             blockchain.add_transaction_to_pool(transaction)
 
             return jsonify({"message": "Ticket added"}), 201
@@ -165,7 +213,7 @@ def buy_ticket():
     data = request.get_json()
     ticket_id = data.get('ticket_id')
     price = data.get('price')
-    buyer = session.get('owner')
+    buyer = Owner.get_public_key(session.get('owner'))
 
     prev_owner, _, _ = blockchain.get_last_transaction_ticket(
         ticket_id)
@@ -180,7 +228,7 @@ def buy_ticket():
 
 @blockchain_bp.route('/process_payment', methods=['POST'])
 def process_payment():
-    buyer = session.get('owner')
+    buyer = Owner.get_public_key(session.get('owner'))
     data = request.get_json()
     amount = data.get('amount')
     id = data.get('id')
@@ -188,21 +236,29 @@ def process_payment():
     if response:
         prev_owner, output_index, tx_id = blockchain.get_last_transaction_ticket(
             response["ticket_id"])
+        with sqlite3.connect(DATABASE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT sign FROM tickets WHERE id = ?", (response["ticket_id"],))
+            result = cursor.fetchone()
+            signature = result[0]
         # Create the transaction inputs and outputs
         inputs = [{
             "tx_id": tx_id,
             "output_index": output_index,
+            'public_key_hash': prev_owner,
+            'signature': signature,
         }
         ]
-        inputs = [TransactionInput.to_class_without_sign(
+        inputs = [TransactionInput.to_class(
             input) for input in inputs]
         outputsticket = [{
             "ticket": response["ticket_id"],
-            "public_key_hash": Owner.get_public_key(buyer)
+            "public_key_hash": buyer,
         }]
         outputsbalance = [{
             "amount": amount,
-            "public_key_hash": Owner.get_public_key(buyer)
+            "public_key_hash": prev_owner
         }]
         # to class
         outputsticket = [TransactionOutputTicket.to_class(
@@ -214,9 +270,8 @@ def process_payment():
 
         # Create the transaction
         transaction = Transaction(
-            owner=prev_owner, inputs=inputs, outputs=outputs, owner_id='admin')
+            owner=prev_owner, inputs=inputs, outputs=outputs)
         transaction.tx_id = transaction.generate_tx_id()
-        transaction.sign()
 
     # Add the transaction to the blockchain
         blockchain.add_transaction_to_pool(transaction)
