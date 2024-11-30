@@ -30,6 +30,7 @@ def init_db():
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             event TEXT,
                             seat TEXT,
+                            price INTEGER,
                             status TEXT
                         )''')  # Status: "jual" or "beli"
         cursor.execute('''CREATE TABLE IF NOT EXISTS tokens (
@@ -44,7 +45,6 @@ def init_db():
                             role TEXT NOT NULL
                         )''')  # Stores hashed passwords
         conn.commit()
-        return jsonify({"message": "success to init"}), 200
 
 
 @ auth_bp.route('/register', methods=['POST'])
@@ -124,39 +124,6 @@ def login():
             session['owner'] = username  # Set session for the user
             return jsonify({"message": "Login successful"}), 200
         return jsonify({"message": "Invalid username or password"}), 401
-
-
-@ auth_bp.route('/add_tickets', methods=['POST'])
-def add_tickets():
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM tickets")
-        count = cursor.fetchone()[0]
-        if count > 0:
-            return jsonify({"message": "Tickets already exist"}), 400
-    tickets = [
-        ('Concert A', 'A1'),
-        ('Concert A', 'A2'),
-        ('Concert A', 'A3'),
-        ('Concert A', 'A4'),
-        ('Concert A', 'A5'),
-        ('Concert B', 'B1'),
-        ('Concert B', 'B2'),
-        ('Concert B', 'B3'),
-        ('Concert B', 'B4'),
-        ('Concert B', 'B5')
-    ]
-    for ticket in tickets:
-        response = requests.post('http://localhost:5000/blockchain/add_ticket', json={
-            "ticket_details": {
-                "event": ticket[0],
-                "seat": ticket[1],
-                'owner': session.get('owner')
-            }
-        })
-        if response.status_code != 201:
-            return jsonify({"message": "Failed to add ticket"}), 400
-    return jsonify({"message": "Tickets added successfully"}), 200
 
 
 @ auth_bp.route('/logout', methods=['POST'])

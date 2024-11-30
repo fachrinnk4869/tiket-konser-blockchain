@@ -9,17 +9,22 @@ import binascii
 from Crypto.Hash import SHA256
 from Crypto.Signature import pkcs1_15
 from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
+from transaction.transaction_output_balance import TransactionOutputBalance
+from transaction.transaction_output_ticket import TransactionOutputTicket
 from wallet import Owner, Transaction
 from interface import BlockchainInterface, ClassInterface
 
 
+import json
+
+
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
-        # Check if the object is an instance of your custom class
-        if isinstance(obj, TransactionOutput):
-            return obj.to_dict()  # Use the to_dict method to convert it to a JSON-compatible format
-        return super().default(obj)  # For other objects, use the default serialization
+        """Override default to handle custom objects."""
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        return super().default(obj)
+ # For other objects, use the default serialization
 
 
 class Block(ClassInterface):
@@ -102,7 +107,7 @@ class Blockchain(BlockchainInterface):
                 #             ),
                 #             inputs=[TransactionInput(**input_data)
                 #                     for input_data in t["inputs"]],
-                #             outputs=[TransactionOutput(
+                #             outputs=[TransactionOutputTicket(
                 #                 **output_data) for output_data in t["outputs"]],
                 #             tx_id=t["tx_id"]
                 #         )
@@ -132,14 +137,14 @@ class Blockchain(BlockchainInterface):
             ]
         )
 
-    def add_transaction_to_block(self, transaction: Transaction):
+    def add_transaction_to_pool(self, transaction: Transaction):
         """
         Add a transaction to the blockchain and update the UTXO pool.
         :param transaction: The transaction to add to the blockchain.
         """
         # Add the outputs to the UTXO pool
-        for output in transaction.outputs:
-            self.utxo_pool[f"{transaction.tx_id}:{output.ticket}"] = output
+        for i, output in enumerate(transaction.outputs):
+            self.utxo_pool[f"{transaction.tx_id}:{i}"] = output
 
         # Remove the spent UTXOs from the UTXO pool
         for input_tx in transaction.inputs:
@@ -158,7 +163,7 @@ class Blockchain(BlockchainInterface):
         """
         return sum(output.amount for output in self.utxo_pool.values() if output.public_key_hash == owner.public_key_hex)
 
-    def get_last_transaction_ticket(self, owner, ticket):
+    def get_last_transaction_ticket(self, ticket):
         """
         Retrieve the last transaction for a specific owner.
         This assumes that transactions are stored in the blockchain blocks.
@@ -167,10 +172,12 @@ class Blockchain(BlockchainInterface):
         for block in reversed(self.chain):
             for transaction in block.transactions:
                 # Check if the owner matches in the outputs
-                for output in transaction.outputs:
-                    if output.public_key_hash == owner and output.ticket == ticket:
-                        return output.ticket, transaction.tx_id
-        return None, None  # Return None if no transaction is found
+                for i, output in enumerate(transaction.outputs):
+                    logging.warning(f"transaction.outputs = {output.ticket}")
+                    logging.warning(f"ticket = {ticket}")
+                    if int(output.ticket) == int(ticket) and isinstance(output, TransactionOutputTicket):
+                        return output.public_key_hash, i, transaction.tx_id
+        return None, None, None  # Return None if no transaction is found
 
     def get_utxo_pool(self):
         """
@@ -276,12 +283,15 @@ class Blockchain(BlockchainInterface):
             deserialized_utxo_pool = {}
 
             for key, value in utxo_pool_data.items():
-                # Check if value is a dictionary that can be converted into a TransactionOutput
-                if isinstance(value, dict) and 'public_key_hash' in value and 'amount' in value:
-                    deserialized_utxo_pool[key] = TransactionOutput.from_dict(
+                # Check if value is a dictionary that can be converted into a TransactionOutputTicket
+                if isinstance(value, dict) and 'public_key_hash' in value and 'ticket' in value:
+                    deserialized_utxo_pool[key] = TransactionOutputTicket.to_class(
+                        value)
+                elif isinstance(value, dict) and 'public_key_hash' in value and 'amount' in value:
+                    deserialized_utxo_pool[key] = TransactionOutputBalance.to_class(
                         value)
                 else:
-                    # Keep as-is if it's not a TransactionOutput
+                    # Keep as-is if it's not a TransactionOutputTicket
                     deserialized_utxo_pool[key] = value
 
             return deserialized_utxo_pool

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daftar Tiket Konser</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 text-gray-900">
+    <!-- Navbar will be dynamically loaded here -->
+    <div id="navbar-container"></div>
+
+    <script>
+        // Load the navbar from navbar.html
+        fetch('./navbar.html')
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('navbar-container').innerHTML = data;
+            })
+            .catch(error => console.error('Error loading navbar:', error));
+    </script>
+
+    <div class="main container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">Daftar Tiket Konser yang Dijual</h1>
+        <table class="min-w-full bg-white shadow-md rounded-lg overflow-hidden">
+            <thead class="bg-gray-800 text-white">
+                <tr>
+                    <th class="w-1/6 py-3 px-4 uppercase font-semibold text-sm">ID</th>
+                    <th class="w-1/3 py-3 px-4 uppercase font-semibold text-sm">Event</th>
+                    <th class="w-1/6 py-3 px-4 uppercase font-semibold text-sm">Seat</th>
+                    <th class="w-1/6 py-3 px-4 uppercase font-semibold text-sm">Price</th>
+                    <th class="w-1/6 py-3 px-4 uppercase font-semibold text-sm">Status</th>
+                    <th class="w-1/6 py-3 px-4 uppercase font-semibold text-sm">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Data will be dynamically inserted here -->
+            </tbody>
+        </table>
+    </div>
+    <script>
+        // Example JavaScript functions for navbar buttons
+        function mineBlock() {
+            alert('Mining block...');
+        }
+
+        function viewUnspentTransactions() {
+            alert('Viewing unspent transactions...');
+        }
+
+        function viewTickets() {
+            alert('Viewing tickets...');
+        }
+
+        function viewBalance() {
+            alert('Viewing balance...');
+        }
+        function viewBlockChain() {
+            fetch('http://localhost:5000/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Remove all existing elements except the navbar
+                    const mainContent = document.querySelector('.main');
+                    if (mainContent) {
+                        mainContent.innerHTML = '';
+                    }
+        
+                    const blockchainContainer = document.createElement('div');
+                    blockchainContainer.className = 'main container mx-auto p-4';
+        
+                    // Prettify JSON data with indentation and escape characters
+                    const formattedData = JSON.stringify(data, null, 2);
+        
+                    blockchainContainer.innerHTML = `
+                        <h2 class="text-2xl font-bold mb-4">Blockchain Data</h2>
+                        <pre class="bg-gray-100 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap break-words border border-gray-300">
+                            ${formattedData}
+                        </pre>
+                    `;
+                    document.body.appendChild(blockchainContainer);
+                })
+                .catch(error => console.error('Error fetching blockchain data:', error));
+        }
+        
+
+        fetch('http://localhost:5000/blockchain/market')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const tbody = document.querySelector('tbody');
+                tbody.innerHTML = ''; // Clear any existing rows
+                data.tickets.forEach(ticket => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="border px-4 py-2">${ticket.id}</td>
+                        <td class="border px-4 py-2">${ticket.event}</td>
+                        <td class="border px-4 py-2">${ticket.seat}</td>
+                        <td class="border px-4 py-2">${ticket.price}</td>
+                        <td class="border px-4 py-2">${ticket.status}</td>
+                        <td class="border px-4 py-2"><button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onclick="beliTiket(${ticket.id})">Beli</button></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            })
+            .catch(error => console.error('Error fetching tickets:', error));
+
+        function beliTiket(ticketId) {
+            window.location.href = `/view/beli?id=${ticketId}`;
+        }
+    </script>
+</body>
+</html>

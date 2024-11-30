@@ -2,7 +2,7 @@ from route.blockchain_transaction import blockchain_bp, blockchain
 from route.auth import auth_bp, init_db
 import sqlite3
 from flask import Flask, jsonify, request, session
-
+from flask_cors import CORS
 
 # SQLite database path
 DATABASE = 'tickets.db'
@@ -11,9 +11,11 @@ DATABASE = 'tickets.db'
 
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['SECRET_KEY'] = 'super_secure'
 app.register_blueprint(auth_bp, url_prefix='/auth')
 app.register_blueprint(blockchain_bp, url_prefix='/blockchain')
+init_db()
 
 
 @app.route('/init', methods=['GET'])

@@ -9,7 +9,8 @@ from Crypto.PublicKey import RSA
 
 from interface import ClassInterface
 from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
+from transaction.transaction_output_balance import TransactionOutputBalance
+from transaction.transaction_output_ticket import TransactionOutputTicket
 
 
 class Owner:
@@ -30,7 +31,7 @@ class Owner:
 
 
 class Transaction(ClassInterface):
-    def __init__(self, owner, inputs: [TransactionInput], outputs: [TransactionOutput], owner_id=None, tx_id=0):
+    def __init__(self, owner, inputs: [TransactionInput], outputs: [TransactionOutputTicket], owner_id=None, tx_id=0):
         self.owner = owner
         self.inputs = inputs
         self.outputs = outputs
@@ -85,11 +86,16 @@ class Transaction(ClassInterface):
 
     @classmethod
     def to_class(cls, data):
+        logging.warning(f"hai {data['outputs']}")
         return cls(
             owner=data['owner'],
             inputs=[TransactionInput(**input_data)
                     for input_data in data["inputs"]],
-            outputs=[TransactionOutput(**output_data)
-                     for output_data in data["outputs"]],
+            outputs=[
+                TransactionOutputTicket(**output_data)
+                if output_data['type'] == "ticket"
+                else TransactionOutputBalance(**output_data)
+                for output_data in data["outputs"]
+            ],
             tx_id=data["tx_id"]
         )
