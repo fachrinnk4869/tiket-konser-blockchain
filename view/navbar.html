@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Flask App{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="bg-gray-800 p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="text-white font-bold text-xl cursor-pointer" onclick="window.location.href='/page'">Konser Blockchain</div>
+            <div>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="mineBlock()">Mine Block</button>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="viewBlockChain()">View BlockChain</button>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="viewUnspentTransactions()">Unspent Transactions</button>
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="viewTickets()">View Tickets</button>
+                <!-- <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="viewBalance()">View Balance</button> -->
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-2" onclick="viewMyTransactions()">View My Transactions</button>
+                <button id="greeting" class="text-white font-bold py-2 px-4 rounded mx-2"></button>
+            </div>
+        </div>
+    </nav>
+    
+
+    <!-- Page Content -->
+    <div>
+        {% block content %}
+        <p>Welcome to my Flask app!</p>
+        {% endblock %}
+    </div>
+
+    <!-- Link JavaScript -->
+    <script src="{{ url_for('static', filename='./script/navbarScript.js') }}"></script>
+</body>
+</html>

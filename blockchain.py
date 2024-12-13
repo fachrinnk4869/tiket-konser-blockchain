@@ -9,19 +9,25 @@ import binascii
 from Crypto.Hash import SHA256
 from Crypto.Signature import pkcs1_15
 from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
+from transaction.transaction_output_balance import TransactionOutputBalance
+from transaction.transaction_output_ticket import TransactionOutputTicket
 from wallet import Owner, Transaction
+from interface import BlockchainInterface, ClassInterface
+
+
+import json
 
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
-        # Check if the object is an instance of your custom class
-        if isinstance(obj, TransactionOutput):
-            return obj.to_dict()  # Use the to_dict method to convert it to a JSON-compatible format
-        return super().default(obj)  # For other objects, use the default serialization
+        """Override default to handle custom objects."""
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        return super().default(obj)
+ # For other objects, use the default serialization
 
 
-class Block:
+class Block(ClassInterface):
     def __init__(self, index, previous_hash, timestamp, transactions, hash, nonce=0):
         self.index = index
         self.previous_hash = previous_hash
@@ -42,20 +48,36 @@ class Block:
         }
         return block_data
 
+    def to_json(self):
+        return json.dumps(self.to_dict())
 
-class Blockchain:
+    @classmethod
+    def to_class(cls, data):
+        transactions = [Transaction.to_class(t) for t in data["transactions"]]
+        return cls(
+            index=data["index"],
+            previous_hash=data["previous_hash"],
+            timestamp=data["timestamp"],
+            hash=data["hash"],
+            nonce=data["nonce"],
+            transactions=transactions
+        )
+
+
+class Blockchain(BlockchainInterface):
     def __init__(self, difficulty=2):
         self.chain = []
         self.current_transactions = []  # Transactions waiting to be added
         self.longest_chain = []  # To store the longest valid chain
-        self.nodes = set(["node1:5000", "node2:5000", "node3:5000"])
         self.difficulty = difficulty
         self.utxo_pool = {}
+        self.nodes = set(["localhost:5000"])
 
         # A set to store other node URLs
         self.setup_logging()
         # Path untuk menyimpan file blockchain
         self.file_path = 'blockchain.json'
+        self.load_from_file()
 
     def save_to_file(self):
         """Save the blockchain to a file."""
@@ -73,28 +95,8 @@ class Blockchain:
         if os.path.exists(self.file_path):
             with open(self.file_path, 'r') as file:
                 data = json.load(file)
-
-                self.chain = [Block(
-                    index=block_data["index"],
-                    previous_hash=block_data["previous_hash"],
-                    timestamp=block_data["timestamp"],
-                    hash=block_data["hash"],
-                    nonce=block_data["nonce"],
-                    transactions=[
-                        Transaction(
-                            owner=Owner(
-                                public_key_hex=t["owner"]["public_key_hex"],
-                                private_key=None  # Jika private_key tidak diperlukan
-                            ),
-                            inputs=[TransactionInput(**input_data)
-                                    for input_data in t["inputs"]],
-                            outputs=[TransactionOutput(
-                                **output_data) for output_data in t["outputs"]],
-                            tx_id=t["tx_id"]
-                        )
-                        for t in block_data["transactions"]
-                    ]
-                ) for block_data in data["chain"]]
+                self.chain = [Block.to_class(block_data)
+                              for block_data in data["chain"]]
 
                 self.difficulty = data["difficulty"]
 
@@ -116,14 +118,14 @@ class Blockchain:
             ]
         )
 
-    def add_transaction_to_block(self, transaction: Transaction):
+    def add_transaction_to_pool(self, transaction: Transaction):
         """
         Add a transaction to the blockchain and update the UTXO pool.
         :param transaction: The transaction to add to the blockchain.
         """
         # Add the outputs to the UTXO pool
-        for output in transaction.outputs:
-            self.utxo_pool[f"{transaction.tx_id}:{output.ticket}"] = output
+        for i, output in enumerate(transaction.outputs):
+            self.utxo_pool[f"{transaction.tx_id}:{i}"] = output
 
         # Remove the spent UTXOs from the UTXO pool
         for input_tx in transaction.inputs:
@@ -140,9 +142,17 @@ class Blockchain:
         :param public_key_hash: The public key hash to check balance for.
         :return: The total balance.
         """
-        return sum(output.amount for output in self.utxo_pool.values() if output.public_key_hash == owner.public_key_hex)
+        return sum(int(output.amount) for output in self.utxo_pool.values() if output.public_key_hash == owner and isinstance(output, TransactionOutputBalance))
 
-    def get_last_transaction_ticket(self, owner, ticket):
+    def get_tickets(self, owner) -> int:
+        """
+        Calculate the balance for a given public key hash by summing all unspent outputs.
+        :param public_key_hash: The public key hash to check balance for.
+        :return: The total balance.
+        """
+        return [int(output.ticket) for output in self.utxo_pool.values() if output.public_key_hash == owner and isinstance(output, TransactionOutputTicket)]
+
+    def get_last_transaction_ticket(self, ticket):
         """
         Retrieve the last transaction for a specific owner.
         This assumes that transactions are stored in the blockchain blocks.
@@ -151,10 +161,12 @@ class Blockchain:
         for block in reversed(self.chain):
             for transaction in block.transactions:
                 # Check if the owner matches in the outputs
-                for output in transaction.outputs:
-                    if output.public_key_hash == owner and output.ticket == ticket:
-                        return output.ticket, transaction.tx_id
-        return None, None  # Return None if no transaction is found
+                for i, output in enumerate(transaction.outputs):
+                    logging.warning(f"transaction.outputs = {output.ticket}")
+                    logging.warning(f"ticket = {ticket}")
+                    if int(output.ticket) == int(ticket) and isinstance(output, TransactionOutputTicket):
+                        return output.public_key_hash, i, transaction.tx_id
+        return None, None, None  # Return None if no transaction is found
 
     def get_utxo_pool(self):
         """
@@ -187,32 +199,6 @@ class Blockchain:
         """
         return [block.to_dict() for block in self.longest_chain]
 
-    def compare_and_replace_chain(self, new_chain):
-        """
-        Compares the current chain with the new chain from another node.
-        If the new chain is longer and valid, replace the current chain with it.
-        """
-        logging.info(new_chain)
-
-        if len(new_chain) > len(self.chain):
-            # Convert the new chain blocks to Block objects, with proper Transaction instantiation
-            self.chain = [
-                Block(
-                    # Unpack block fields except 'transactions'
-                    **{key: value for key, value in block.items() if key != 'transactions'},
-                    transactions=[
-                        Transaction(**t) if isinstance(t, dict) else t for t in block.get('transactions', [])
-                    ]  # Ensure each transaction is a Transaction object
-                ) if isinstance(block, dict) else block
-                for block in new_chain
-            ]
-
-            self.longest_chain = new_chain  # Update the longest chain
-            logging.warning(
-                "Replaced local chain with a longer chain from another node.")
-            return True
-        return False
-
     def hash_block(self, index, previous_hash, nonce):
         block_string = f"{index}{previous_hash}{nonce}"
         return hashlib.sha256(block_string.encode('utf-8')).hexdigest()
@@ -240,8 +226,8 @@ class Blockchain:
         # Reset the list of current transactions
         self.current_transactions = []
         try:
-            self.broadcast_new_block(new_block, self.utxo_pool)
-            return new_block  # Return the block itself for API response
+            if self.broadcast_new_block(new_block, self.utxo_pool):
+                return new_block
         except requests.exceptions.RequestException as e:
             return None
 
@@ -286,12 +272,15 @@ class Blockchain:
             deserialized_utxo_pool = {}
 
             for key, value in utxo_pool_data.items():
-                # Check if value is a dictionary that can be converted into a TransactionOutput
-                if isinstance(value, dict) and 'public_key_hash' in value and 'amount' in value:
-                    deserialized_utxo_pool[key] = TransactionOutput.from_dict(
+                # Check if value is a dictionary that can be converted into a TransactionOutputTicket
+                if isinstance(value, dict) and 'public_key_hash' in value and 'ticket' in value:
+                    deserialized_utxo_pool[key] = TransactionOutputTicket.to_class(
+                        value)
+                elif isinstance(value, dict) and 'public_key_hash' in value and 'amount' in value:
+                    deserialized_utxo_pool[key] = TransactionOutputBalance.to_class(
                         value)
                 else:
-                    # Keep as-is if it's not a TransactionOutput
+                    # Keep as-is if it's not a TransactionOutputTicket
                     deserialized_utxo_pool[key] = value
 
             return deserialized_utxo_pool
@@ -304,29 +293,24 @@ class Blockchain:
         previous_block = self.chain[-1]
         if block.previous_hash != previous_block.hash:
             return False
+        print("Previous hash validated")
         # Check that the block hash is correct and meets difficulty requirements
-        # for t in block.transactions:
-        #     logging.warning(f" {t}")
-        # block.transactions = [Transaction(**t) for t in block.transactions]
-        block.transactions = [
-            Transaction(
-                # Pass private_key or None if not needed
-                owner=Owner(public_key_hex=t["owner"]
-                            ["public_key_hex"], private_key=None),
-                inputs=[TransactionInput(**input_data)
-                        for input_data in t["inputs"]],
-                outputs=[TransactionOutput(**output_data)
-                         for output_data in t["outputs"]],
-                tx_id=t["tx_id"]
-            )
-            for t in block.transactions
-        ]
+        result = requests.post(
+            f'http://localhost:5000/blockchain/validate_sign', json={'ticket_id': block.to_dict()['transactions'][0]['outputs'][0]['ticket']})
+        if result.status_code != 200 and result.status_code != 201:
+            logging.error(
+                f"Failed to validate signature for block {block.index}. Status Code: {result.status_code}")
+            return False
+        print("Signature validated")
         if block.hash != self.hash_block(block.index, block.previous_hash, block.nonce):
             return False
+        print("Hash validated")
         if block.hash[:self.difficulty] != "0" * self.difficulty:
             return False
+        print("Difficulty validated")
         if not self.validate_chain():
             return False
+        print("Chain validated")
         # logging.warning(f"UTXO poool = {utxo_pool}")
         self.utxo_pool = self.deserialize_utxo_pool(utxo_pool)
         self.chain.append(block)
@@ -343,16 +327,18 @@ class Blockchain:
 
                 # Simulate sending the new block
                 response = requests.post(
-                    f'http://{node}/validate_block', json={'block': new_block.to_dict(), 'utxo_pool': json.dumps(utxo_pool, cls=CustomJSONEncoder)})
+                    f'http://{node}/blockchain/validate_block', json={'block': new_block.to_dict(), 'utxo_pool': json.dumps(utxo_pool, cls=CustomJSONEncoder)})
 
                 if response.status_code == 200:
                     logging.info(f"Successfully broadcasted to node {node}")
                 else:
                     logging.error(
                         f"Error broadcasting to {node}, Status Code: {response.status_code}")
-
+                    return False
             except requests.exceptions.RequestException as e:
                 logging.error(f"Failed to contact node {node}. Error: {e}")
+                return False
+        return True
 
     def get_chain(self):
         return [block.to_dict() for block in self.chain]

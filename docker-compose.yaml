@@ -3,39 +3,12 @@ services:
     image: blockchain_image
     build: .
     ports:
-      - "5001:5000"
+      - "5000:5000"
     volumes:
       - .:/app
     environment:
       - FLASK_APP=app.py
+      - FLASK_ENV=development
       - FLASK_RUN_HOST=0.0.0.0
-    networks:
-      - blockchain_net
-  node2:
-    image: blockchain_image
-    build: .
-    ports:
-      - "5002:5000"
-    volumes:
-      - .:/app
-    environment:
-      - FLASK_APP=app.py
-      - FLASK_RUN_HOST=0.0.0.0
-    networks:
-      - blockchain_net
-
-  node3:
-    image: blockchain_image
-    build: .
-    ports:
-      - "5003:5000"
-    volumes:
-      - .:/app
-    environment:
-      - FLASK_APP=app.py
-      - FLASK_RUN_HOST=0.0.0.0
-    networks:
-      - blockchain_net
-networks:
-  blockchain_net:
-    driver: bridge
+      - TEMPLATES_AUTO_RELOAD=True
+    network_mode: "host"  # Connect container directly to the host's network

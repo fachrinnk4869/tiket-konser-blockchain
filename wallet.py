@@ -1,36 +1,38 @@
 import json
 import binascii
+import logging
+from flask import session
+
 from Crypto.Hash import SHA256
 from Crypto.Signature import pkcs1_15
+from Crypto.PublicKey import RSA
 
+from interface import ClassInterface
 from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
+from transaction.transaction_output_balance import TransactionOutputBalance
+from transaction.transaction_output_ticket import TransactionOutputTicket
 
 
 class Owner:
-    def __init__(self, public_key_hex: str, private_key):
-        self.public_key_hex = public_key_hex
-        self.private_key = private_key
+    @staticmethod
+    def get_public_key(owner):
+        # logging.warning(f"halo {owner}")
+        with open(f'./keys/public_{owner}.pem', 'r') as file:
+            return file.read()
 
-    def to_json(self) -> str:
-        # Serialize private_key to PEM format string
-        private_key_pem = self.private_key.export_key().decode(
-            'utf-8')  # Convert to PEM string
-
-        return json.dumps({
-            "public_key_hex": self.public_key_hex,
-            "private_key": private_key_pem  # Serialize private key to PEM format
-        })
-
-    def to_dict(self):
-        # Only serialize public_key_hex for the owner (private_key remains private)
-        return {
-            "public_key_hex": self.public_key_hex
-        }
+    @staticmethod
+    def get_private_key(owner, import_key=True):
+        # logging.warning(f"halo {owner}")
+        with open(f'./keys/private_{owner}.pem', 'r') as file:
+            private_key = file.read()
+            # Convert the PEM string to an RSA key object
+            if import_key:
+                private_key = RSA.import_key(private_key)
+            return private_key
 
 
-class Transaction:
-    def __init__(self, owner, inputs: [TransactionInput], outputs: [TransactionOutput], tx_id=0):
+class Transaction(ClassInterface):
+    def __init__(self, owner, inputs: [TransactionInput], outputs: [TransactionOutputTicket], owner_id=None, tx_id=0):
         self.owner = owner
         self.inputs = inputs
         self.outputs = outputs
@@ -47,27 +49,9 @@ class Transaction:
         # Generate tx_id as the hash of the transaction data
         return SHA256.new(transaction_bytes).hexdigest()
 
-    def sign_transaction_data(self):
-        transaction_dict = {
-            "inputs": [tx_input.to_json(with_signature_and_public_key=False) for tx_input in self.inputs],
-            "outputs": [tx_output.to_json() for tx_output in self.outputs]
-        }
-        transaction_bytes = json.dumps(
-            transaction_dict, indent=2).encode('utf-8')
-        hash_object = SHA256.new(transaction_bytes)
-        signature = pkcs1_15.new(self.owner.private_key).sign(hash_object)
-        return signature
-
-    def sign(self):
-        signature_hex = binascii.hexlify(
-            self.sign_transaction_data()).decode("utf-8")
-        for transaction_input in self.inputs:
-            transaction_input.signature = signature_hex
-            transaction_input.public_key = self.owner.public_key_hex
-
     def to_json(self):
         return {
-            "owner": self.owner.to_json(),
+            "owner": self.owner,
             "inputs": [i.to_json() for i in self.inputs],
             "outputs": [i.to_json() for i in self.outputs],
             "tx_id": self.tx_id  # Include tx_id in the data sent to nodes
@@ -75,8 +59,24 @@ class Transaction:
 
     def to_dict(self):
         return {
-            "owner": self.owner.to_dict(),
+            "owner": self.owner,
             "inputs": [i.to_dict() for i in self.inputs],
             "outputs": [i.to_dict() for i in self.outputs],
             "tx_id": self.tx_id  # Include tx_id in the data sent to nodes
         }
+
+    @classmethod
+    def to_class(cls, data):
+        # logging.warning(f"hai {data['outputs']}")
+        return cls(
+            owner=data['owner'],
+            inputs=[TransactionInput(**input_data)
+                    for input_data in data["inputs"]],
+            outputs=[
+                TransactionOutputTicket(**output_data)
+                if output_data['type'] == "ticket"
+                else TransactionOutputBalance(**output_data)
+                for output_data in data["outputs"]
+            ],
+            tx_id=data["tx_id"]
+        )

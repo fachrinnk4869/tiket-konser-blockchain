@@ -1,15 +1,12 @@
-import os
-from flask import Flask, jsonify, request
-import logging
-from blockchain import Block, Blockchain, Transaction
 import requests
-from flask import Flask, request, jsonify
-from Crypto.PublicKey import RSA
-from wallet import Owner, Transaction
-from transaction.transaction_input import TransactionInput
-from transaction.transaction_output import TransactionOutput
+from route.blockchain_transaction import blockchain_bp, blockchain
+from route.auth import auth_bp, init_db
+from route.smart_contract_api import smart_contract_bp
 import sqlite3
-import uuid
+from flask import Flask, jsonify, request, session, render_template
+from flask_cors import CORS
+
+from wallet import Owner
 
 # SQLite database path
 DATABASE = 'tickets.db'
@@ -17,408 +14,133 @@ DATABASE = 'tickets.db'
 # Initialize database if not exists
 
 
-def init_db():
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS tickets (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            event TEXT,
-                            seat TEXT,
-                            status TEXT
-                        )''')  # Status: "jual" or "beli"
-        cursor.execute('''CREATE TABLE IF NOT EXISTS tokens (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            token TEXT,
-                            ticket_id TEXT
-                        )''')  # Status: "jual" or "beli"
-        conn.commit()
-
-
-# Call init_db on app startup
+app = Flask(__name__, template_folder="./view")
+CORS(app)  # Enable CORS for all routes
+app.config['SECRET_KEY'] = 'super_secure'
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.register_blueprint(smart_contract_bp, url_prefix='/smart_contract')
+app.register_blueprint(auth_bp, url_prefix='/auth')
+app.register_blueprint(blockchain_bp, url_prefix='/blockchain')
 init_db()
 
-app = Flask(__name__)
-blockchain = Blockchain(difficulty=4)  # Set difficulty level for proof of work
-# Load blockchain data on startup
-blockchain.load_from_file()
-# Generate RSA keys for the owner (Alice) on app startup
-rsa_key_dir = '/rsa_keys/'  # Path inside the container's volume
 
-if not os.path.exists(rsa_key_dir):
-    os.makedirs(rsa_key_dir)
-
-private_key_path = os.path.join(rsa_key_dir, 'private_key.pem')
-public_key_path = os.path.join(rsa_key_dir, 'public_key.pem')
-# Check if keys already exist
-if not os.path.exists(private_key_path) or not os.path.exists(public_key_path):
-    # Generate RSA keys
-    private_key = RSA.generate(2048)
-    public_key = private_key.publickey()
-
-    # Save private key
-    with open(private_key_path, 'wb') as private_file:
-        private_file.write(private_key.export_key())
-
-    # Save public key
-    with open(public_key_path, 'wb') as public_file:
-        public_file.write(public_key.export_key())
-
-    print("Keys generated and saved.")
-else:
-    print("Keys already exist, loading from files.")
-
-# Load the saved keys on app startup
-with open(private_key_path, 'rb') as private_file:
-    private_key = RSA.import_key(private_file.read())
-
-with open(public_key_path, 'rb') as public_file:
-    public_key = RSA.import_key(public_file.read())
-
-# Example: Alice object
-owner = Owner(public_key_hex=public_key.export_key().decode(
-    'utf-8'), private_key=private_key)
-print(f"Public key: {owner.public_key_hex}")
+@ app.route('/get_user', methods=['GET'])
+def get_user():
+    owner = session.get('owner')
+    return jsonify({"owner": owner}), 200
 
 
-@app.route('/', methods=['GET'])
+@ app.route('/', methods=['GET'])
 def get_blockchain():
     return jsonify(blockchain.get_chain())
 
 
-@app.route('/add_block', methods=['POST'])
-def add_block():
-    new_block = blockchain.add_block()
-    if new_block:
-        return jsonify({"message": "Block added", "block": new_block.to_dict()}), 201
-    return jsonify({"message": "Failed to add block"}), 400
-
-
-@app.route('/validate_block', methods=['POST'])
-def validate_block():
-    block_data = request.json.get('block')
-    utxo_pool = request.json.get('utxo_pool')
-    block = Block(**block_data)
-    # logging.WARNING(f"halo {block}")
-
-    if blockchain.validate_block(block, utxo_pool):
-        return jsonify({"message": "Block is valid"}), 200
-    return jsonify({"message": "Invalid block"}), 400
-
-
-@app.route('/mine_block', methods=['POST'])
-def mine_block():
-    new_block = blockchain.add_block()
-    if new_block:
-        blockchain.save_to_file()
-        return jsonify({"message": "Block mined", "block": new_block.to_dict()}), 201
-    return jsonify({"message": "Mining failed"}), 400
-
-
-@app.route('/crash_block', methods=['POST'])
-def crash_block():
-    # Get the block index and new data from the request
-    logging.warning(f"Masuk sini")
-    block_data = request.json.get('block')
-    block_index = block_data.get('index')
-    new_transactions = block_data.get('transactions')
-
-    # Validate index
-    logging.warning(f"Index of block to crash: {block_index}")
-
-    # Check if the block index is valid
-    if int(block_index) >= len(blockchain.chain):
-        return jsonify({"message": "Invalid block index"}), 400
-
-    # Get the block to crash
-    block_to_crash = blockchain.chain[block_index]
-
-    # Convert new transaction data into Transaction objects
-    new_transactions_objects = [
-        Transaction(**t) for t in new_transactions]
-
-    # Modify the block's transactions (this simulates the crash)
-    block_to_crash.transactions = new_transactions_objects
-
-    # Recalculate the hash with the new data
-    block_to_crash.hash = blockchain.hash_block(
-        block_to_crash.index,
-        block_to_crash.previous_hash,
-        block_to_crash.timestamp,
-        block_to_crash.transactions,
-        block_to_crash.nonce
-    )
-
-    # Log the crash
-    logging.warning(
-        f"Block at index {block_index} crashed with new data: {new_transactions}")
-
-    # Simulate broadcasting of the crashed block to other nodes (optional)
-    blockchain.broadcast_new_block(block_to_crash)
-
-    # Return response with updated block information
-    return jsonify({
-        "message": f"Block at index {block_index} has been crashed.",
-        "block": block_to_crash.to_dict()  # Make sure to return the block as a dictionary
-    }), 200
-
-
-@app.route('/fix_blockchain', methods=['POST'])
-def fix_blockchain():
-    # If the blockchain is corrupted, compare with the longest known valid chain
-    if not blockchain.validate_chain():
-        logging.warning("Blockchain is corrupted. Attempting to fix...")
-
-        # Try to fetch the longest chain from other nodes
-        real_longest_chain = []
-        for node in blockchain.nodes:
-            try:
-                logging.warning(f"Requesting longest chain from node {node}")
-                response = requests.get(f'http://{node}/get_longest_chain')
-                if response.status_code == 200:
-                    longest_chain = response.json().get('chain')
-                    logging.warning(f"longest chain: {longest_chain}")
-                    if len(longest_chain) > len(real_longest_chain):
-                        real_longest_chain = longest_chain
-                        continue
-                else:
-                    logging.error(
-                        f"Failed to get the chain from {node}, Status: {response.status_code}")
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Failed to contact node {node}. Error: {e}")
-        if real_longest_chain:
-            blockchain.compare_and_replace_chain(real_longest_chain)
-            return jsonify({"message": "Blockchain fixed by replacing with the longest chain."}), 200
-        return jsonify({"message": "Could not fix blockchain with any valid chain."}), 400
-    return jsonify({"message": "Blockchain is already valid."}), 200
-
-
-@app.route('/add_ticket', methods=['POST'])
-def add_ticket():
-    data = request.json
-    event = data.get('event')
-    seat = data.get('seat')
-
-    if not all([owner, event, seat]):
-        return jsonify({"message": "Missing required fields"}), 400
-
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO tickets (event, seat, status) VALUES (?, ?, 'jual')",
-                       (event, seat))
-        conn.commit()
-
-    return jsonify({"message": "Ticket listed for sale"}), 201
-
-
-@app.route("/buy_ticket", methods=["POST"])
-def buy_ticket():
-    data = request.get_json()
-
-    # Extract transaction details from the request body
-    ticket_id = data.get("ticket")
-    buyer_node = data.get("node")
-
-    if not ticket_id or not buyer_node:
-        return jsonify({"message": "Missing required data: ticket or node"}), 400
-
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-
-        # Check current status of the ticket
-        cursor.execute("SELECT status FROM tickets WHERE id = ?", (ticket_id,))
-        result = cursor.fetchone()
-
-        if not result:
-            return jsonify({"message": "Ticket not found"}), 404
-
-        current_status = result[0]
-
-        # If the ticket is already purchased
-        if current_status == "beli":
-            return jsonify({"message": "Ticket already purchased"}), 400
-        # Generate a random token
-        token_valid = str(uuid.uuid4())
-
-        # Store the token for validation in create_transaction
-        cursor.execute(
-            "INSERT INTO tokens (token, ticket_id) VALUES (?, ?)", (token_valid, ticket_id))
-        conn.commit()
-        # Proceed with the transaction
-        transaction_data = {
-            "outputs": [{
-                "node": buyer_node,
-                "amount": 50,  # Example amount
-                "ticket": ticket_id
-            }],
-            "token_valid": token_valid
-        }
-
-        # Hit /create_transaction endpoint
-        response = requests.post(
-            f"http://{buyer_node}:5000/create_transaction", json=transaction_data)
-
-        if response.status_code == 201:
-            # Update the ticket status to 'beli'
-            cursor.execute(
-                "UPDATE tickets SET status = 'beli' WHERE id = ?", (ticket_id,))
-            conn.commit()
-            return jsonify({"message": "Ticket purchased successfully"}), 200
-        else:
-            return jsonify({"message": "Transaction failed"}), 400
-
-
-@app.route("/create_transaction", methods=["POST"])
-def create_transaction():
-    data = request.get_json()
-
-    # Extract transaction details from the request body
-    outputs_data = data.get("outputs", [])
-    token_valid = data.get("token_valid", 1)
-
-    # Validate token
-    if not token_valid:
-        return jsonify({"status": "error", "message": "Missing token"}), 400
-
-    # Ensure this key is provided in the request
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        response = requests.get(
-            f'http://localhost:5000/get_seatEvent')
-        if response.status_code == 200:  # Ensure the request was successful
-            data = response.json()
-        # Check if the token is valid
-        cursor.execute(
-            "SELECT ticket_id FROM tokens WHERE token = ?", (token_valid,))
-        token_data = cursor.fetchone()
-        if not token_data and not data['event']:
-            return jsonify({"status": "error", "message": "Invalid token or not have event, seat available"}), 400
-        elif token_data:
-            # Delete the token after validation (one-time use)
-            cursor.execute(
-                "DELETE FROM tokens WHERE token = ?", (token_valid,))
-            conn.commit()
-
-    # Create the inputs
-    inputs = []
-    for output_data in outputs_data:
-        try:
-            # Get the previous transaction hash for the input owner
-            previous_index, previous_transaction_hash = blockchain.get_last_transaction_ticket(
-                owner.public_key_hex, output_data.get("ticket"))
-
-            if not previous_index or not previous_transaction_hash:
-                transaction_input = TransactionInput(
-                    transaction_hash="genesis",
-                    output_index="genesis"
-                )
-            else:
-                transaction_input = TransactionInput(
-                    transaction_hash=previous_transaction_hash,
-                    output_index=previous_index
-                )
-            inputs.append(transaction_input)
-        except KeyError:
-            return jsonify({"status": "error", "message": "Invalid input format"}), 400
-
-    outputs = []
-    for output_data in outputs_data:
-        node = output_data["node"]
-        response = requests.get(
-            f'http://{node}:5000/get_public_key')
-        if response.status_code == 200:  # Ensure the request was successful
-            try:
-                data = response.json()  # Parse the JSON content
-                # Extract the desired key
-                transaction_output = TransactionOutput(
-                    public_key_hash=data['public_key_hex'],
-                    amount=output_data["amount"],
-                    ticket=output_data.get("ticket"),
-                )
-            except ValueError:
-                print("Response is not valid JSON.")
-            except KeyError:
-                print("Key 'public_key_hash' not found in the response.")
-        else:
-            print(
-                f"Request failed with status code {response.status_code}")
-        outputs.append(transaction_output)
-
-    # Create the transaction
-    transaction = Transaction(owner=owner, inputs=inputs, outputs=outputs)
-    transaction.tx_id = transaction.generate_tx_id()
-    # Sign the transaction
-    transaction.sign()
-
-    # Add the transaction to the blockchain
-    blockchain.add_transaction_to_block(transaction)
-
-    return jsonify({"status": "success", "message": "Transaction created"}), 201
-
-
-@app.route('/get_longest_chain', methods=['GET'])
-def get_longest_chain():
-    # Return the longest valid chain this node knows about
-    return jsonify({"chain": blockchain.get_longest_chain()}), 200
-
-
-@app.route('/get_public_key', methods=['GET'])
-def get_public_key_hash():
-    # Call the method to get the public key hash
-    public_key_hash = owner.to_dict()
-
-    # Return it as a JSON response
-    return jsonify(public_key_hash), 200
-
-
-@app.route("/get_utxo_pool", methods=["GET"])
+@ app.route("/get_utxo_pool", methods=["GET"])
 def get_utxo_pool():
     utxo_pool = blockchain.get_utxo_pool()
     return jsonify(utxo_pool), 200
 
 
-@app.route("/get_balance", methods=["GET"])
+@ app.route("/get_balance", methods=["GET"])
 def get_balance():
+    owner = Owner.get_public_key(session.get('owner', None))
     balance = blockchain.get_balance(owner)
     return jsonify({"balance": balance}), 200
 
 
-@app.route("/get_seatEvent", methods=["GET"])
-def get_seatEvent():
-    """
-    Calculate the balance for a given public key hash by summing all unspent outputs.
-    :param public_key_hash: The public key hash to check balance for.
-    :return: The total balance.
-    """
-    # Lists to store the associated seats and events
+@ app.route("/get_tickets", methods=["GET"])
+def get_tickets():
+    owner = Owner.get_public_key(session.get('owner', None))
+    tickets = blockchain.get_tickets(owner)
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        ticket_list = []
+        for ticket in tickets:
+            cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket,))
+            ticket_data = cursor.fetchone()
+            ticket_data = {
+                "id": ticket_data[0],
+                "event": ticket_data[1],
+                "seat": ticket_data[2],
+                "price": ticket_data[3],
+                "status": ticket_data[4],
+            }
+            ticket_list.append(ticket_data)
+    return jsonify(ticket_list), 200
 
-    # Iterate over the UTXO pool and filter based on the owner's public key hash
-    seats, events = [], []
-    for output in blockchain.utxo_pool.values():
-        if output.public_key_hash == owner.public_key_hex:
-            # Add the seat and event associated with this UTXO output
-            # Assuming `seat` is an attribute in TransactionOutput
-            with sqlite3.connect(DATABASE) as conn:
-                cursor = conn.cursor()
-                try:
-                    # Query untuk mencari UTXO yang cocok berdasarkan public_key_hash
-                    query = """
-                    SELECT seat, event
-                    FROM tickets
-                    WHERE id = ?
-                    """
-                    cursor.execute(query, (output.ticket,))
-                    result = cursor.fetchone()
 
-                    if result:
-                        seat, event = result  # Assign hasil query ke variabel seat dan event
-                        seats.append(seat)
-                        events.append(event)
+@app.route("/page/navbar", methods=["GET"])
+def get_navbar():
+    if not session.get('owner'):
+        return requests.get("http://localhost:5000/page/login")
+    return render_template("navbar.html")
 
-                except sqlite3.Error as e:
-                    print(f"Database error: {e}")
 
-    return jsonify({"seat": seats, "event": events}), 200
+@app.route("/page", methods=["GET"])
+def get_page():
+    if not session.get('owner'):
+        return requests.get("http://localhost:5000/page/login")
+    return render_template("index.html")
+
+
+@app.route('/page/beli/<int:ticket_id>')
+def beli_ticket(ticket_id):
+    if not session.get('owner'):
+        return requests.get("http://localhost:5000/page/login")
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,))
+        ticket_data = cursor.fetchone()
+        if not ticket_data:
+            return "Ticket not found", 404
+
+        ticket = {
+            "id": ticket_data[0],
+            "event": ticket_data[1],
+            "seat": ticket_data[2],
+            "price": ticket_data[3],
+            "status": ticket_data[4],
+        }
+    return render_template('beli.html', ticket=ticket)
+
+
+@app.route('/page/jual/<int:ticket_id>')
+def jual_ticket(ticket_id):
+    if not session.get('owner'):
+        return requests.get("http://localhost:5000/page/login")
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,))
+        ticket_data = cursor.fetchone()
+        if not ticket_data:
+            return "Ticket not found", 404
+
+        ticket = {
+            "id": ticket_data[0],
+            "event": ticket_data[1],
+            "seat": ticket_data[2],
+            "price": ticket_data[3],
+            "status": ticket_data[4],
+        }
+    return render_template('jual.html', ticket=ticket)
+
+
+@app.route('/page/mytiket')
+def my_ticket():
+    if not session.get('owner'):
+        return requests.get("http://localhost:5000/page/login")
+    return render_template('mytiket.html')
+
+
+@app.route('/page/login')
+def login():
+    return render_template('login.html')
+
+
+@app.route('/page/mytransaksi')
+def my_transaksi():
+    return render_template('mytransaksi.html')
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)
