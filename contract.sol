@@ -22,38 +22,41 @@ contract TicketMarketplace {
 
     mapping(uint256 => Ticket) public tickets;
     mapping(bytes32 => Transaction) public transactions;
+    uint256[] private ticketIds;
+    bytes32[] private transactionHashes;
 
     event TicketIssued(uint256 indexed ticketId, address indexed owner, uint256 price);
     event TransactionCreated(uint256 indexed ticketId, address indexed buyer, address indexed seller, uint256 price, bytes32 hash);
     event PaymentProcessed(uint256 indexed ticketId, address indexed buyer, address indexed seller, uint256 price);
 
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin can perform this action");
-        _;
-    }
+    function issueTicket(uint256 ticketId, uint256 price) external {
+        Ticket storage ticket = tickets[ticketId];
 
-    modifier onlyTicketOwner(uint256 ticketId) {
-        require(tickets[ticketId].owner == msg.sender, "You are not the ticket owner");
-        _;
-    }
+        if (ticket.owner == address(0)) {
+            // First-time issuance
+            tickets[ticketId] = Ticket(ticketId, msg.sender, price, true);
+            ticketIds.push(ticketId);
+            emit TicketIssued(ticketId, msg.sender, price);
+        } else {
+            // Re-issuing an existing ticket
+            require(ticket.owner == msg.sender, "Only the owner can make the ticket available");
+            require(!ticket.isAvailable, "Ticket is already available");
 
-    constructor() {
-        admin = msg.sender;
-    }
+            ticket.isAvailable = true;
+            ticket.price = price;
+            emit TicketIssued(ticketId, msg.sender, price);
+        }
 
-    function issueTicket(uint256 ticketId, uint256 price) external onlyAdmin {
-        require(tickets[ticketId].owner == address(0), "Ticket already exists");
-        tickets[ticketId] = Ticket(ticketId, admin, price, true);
-        emit TicketIssued(ticketId, admin, price);
     }
 
     function createTransaction(uint256 ticketId, address buyer) external {
         Ticket memory ticket = tickets[ticketId];
         require(ticket.isAvailable, "Ticket is not available");
-        require(ticket.owner == msg.sender, "Only the owner can sell this ticket");
+        require(ticket.owner != msg.sender, "The owner can't buy this ticket");
 
         bytes32 txHash = keccak256(abi.encodePacked(ticketId, buyer, msg.sender, ticket.price, block.timestamp));
         transactions[txHash] = Transaction(ticketId, buyer, msg.sender, ticket.price, false, txHash);
+        transactionHashes.push(txHash);
 
         emit TransactionCreated(ticketId, buyer, msg.sender, ticket.price, txHash);
     }
@@ -86,5 +89,45 @@ contract TicketMarketplace {
 
     function getTransaction(bytes32 txHash) external view returns (Transaction memory) {
         return transactions[txHash];
+    }
+
+    function getTicketsByUser(address user) external view returns (Ticket[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < ticketIds.length; i++) {
+            if (tickets[ticketIds[i]].owner == user) {
+                count++;
+            }
+        }
+
+        Ticket[] memory userTickets = new Ticket[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < ticketIds.length; i++) {
+            if (tickets[ticketIds[i]].owner == user) {
+                userTickets[index] = tickets[ticketIds[i]];
+                index++;
+            }
+        }
+        return userTickets;
+    }
+
+    function getTransactionsByUser(address user) external view returns (Transaction[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < transactionHashes.length; i++) {
+            Transaction memory txData = transactions[transactionHashes[i]];
+            if (txData.buyer == user || txData.seller == user) {
+                count++;
+            }
+        }
+
+        Transaction[] memory userTransactions = new Transaction[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < transactionHashes.length; i++) {
+            Transaction memory txData = transactions[transactionHashes[i]];
+            if (txData.buyer == user || txData.seller == user) {
+                userTransactions[index] = txData;
+                index++;
+            }
+        }
+        return userTransactions;
     }
 }

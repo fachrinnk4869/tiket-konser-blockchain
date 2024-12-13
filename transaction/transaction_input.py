@@ -4,7 +4,11 @@ from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 import json
 
+from eth_account.messages import encode_defunct
+from web3 import Web3
 from interface import ClassInterface
+ganache_url = "http://127.0.0.1:8545"
+web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 
 class TransactionInput(ClassInterface):
@@ -17,32 +21,37 @@ class TransactionInput(ClassInterface):
     def sign_transaction_input(self, private_key_object):
         # Hash the input UTXO data
         input_data = json.dumps(
-            self.transaction_hash, sort_keys=True).encode('utf-8')
-        hashed_data = SHA256.new(input_data)
+            self.transaction_hash, sort_keys=True)
+        encoded_message = encode_defunct(text=input_data)
+        # Sign the encoded message with the private key
+        signed_message = web3.eth.account.sign_message(
+            encoded_message, private_key_object)
+        print(f"Signed Message: {signed_message}")
 
-        # Sign the hash
-        signature = pkcs1_15.new(private_key_object).sign(hashed_data)
+        # Signature details
+        signature = signed_message.signature.hex()
 
         # Return the signature (hex-encoded)
-        return signature.hex()
+        return signature
 
     def validate_transaction_input(self, public_key, signature):
         try:
             # Hash the input UTXO data
             input_data = json.dumps(
-                self.transaction_hash, sort_keys=True).encode('utf-8')
-            hashed_data = SHA256.new(input_data)
+                self.transaction_hash, sort_keys=True)
+            encoded_message = encode_defunct(text=input_data)
+            # Recover the address from the signature
+            recovered_address = web3.eth.account.recover_message(
+                encoded_message, signature=signature)
+            print(f"Recovered Address: {recovered_address}")
 
-            # Load the public key
-            public_key_object = RSA.import_key(public_key)
-
-            # Decode the hex-encoded signature
-            signature_bytes = binascii.unhexlify(signature)
-
-            # Verify the signature
-            pkcs1_15.new(public_key_object).verify(
-                hashed_data, signature_bytes)
-            return True  # If no exception is raised, the signature is valid
+            # Check if the recovered address matches the public address
+            if recovered_address == public_key:
+                print("Signature is valid! The signer owns the private key.")
+                return True  # If no exception is raised, the signature is valid
+            else:
+                print("Signature is invalid!")
+                return False  # Signature is invalid
         except (ValueError, TypeError):
             return False  # Signature is invalid
 

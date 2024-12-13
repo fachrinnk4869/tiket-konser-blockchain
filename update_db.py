@@ -8,11 +8,11 @@ def update_transactions_to_pending(db_path):
         cursor = conn.cursor()
 
         # Update all transactions to 'pending'
-        cursor.execute("UPDATE transactions SET status = 'pending'")
+        cursor.execute("UPDATE tickets SET status = 'available'")
 
         # Commit the changes
         conn.commit()
-        print("All transactions have been updated to 'pending'.")
+        print("All tickets have been updated to 'pending'.")
 
     except sqlite3.Error as e:
         print(f"An error occurred: {e}")

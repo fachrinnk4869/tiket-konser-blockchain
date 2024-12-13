@@ -8,4 +8,7 @@ services:
       - .:/app
     environment:
       - FLASK_APP=app.py
+      - FLASK_ENV=development
       - FLASK_RUN_HOST=0.0.0.0
+      - TEMPLATES_AUTO_RELOAD=True
+    network_mode: "host"  # Connect container directly to the host's network

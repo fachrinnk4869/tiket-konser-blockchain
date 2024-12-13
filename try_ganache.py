@@ -1,9 +1,10 @@
 from web3 import Web3
+from eth_keys import keys
 import json
 
 # Connect to Ethereum node
 # Replace with your Ethereum node
-web3 = Web3(Web3.HTTPProvider("http://127.0.0.1:7545"))
+web3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
 
 # Check connection
 if web3.is_connected():
@@ -14,10 +15,6 @@ else:
 
 # Contract details
 # Replace with your deployed contract address
-deployer_address = "0xfCE689c960C37fe5d8b8e458BA2588CeeFA43D2b"
-# Replace with admin's private key
-admin_private_key = "0x9ddfb693f3fd23d025a7ddcba9e8671e8f304ef69d2643c396f71f4bfb4e22b9"
-admin_account = web3.eth.account.from_key(admin_private_key)
 
 # Contract ABI (Paste your ABI here as a string or load from a file)
 with open("ticket_abi.json", "r") as abi_file:  # Replace with your ABI JSON file
@@ -30,6 +27,13 @@ with open("ticket_bin.bin", "r") as bin_file:  # Replace with your ABI JSON file
 # Build Contract Deployment
 contract = web3.eth.contract(abi=contract_abi, bytecode=bytecode)
 
+# Replace with admin's private key
+admin_private_key = "0xedfc17a422af95df6dfdf6f6cf0b7a2c18afa89c5f691d5a24ae645fd01e0ccc"
+
+
+# public key
+admin_account = web3.eth.account.from_key(admin_private_key)
+deployer_address = admin_account.address
 # Get Nonce
 nonce = web3.eth.get_transaction_count(deployer_address)
 
@@ -37,7 +41,7 @@ nonce = web3.eth.get_transaction_count(deployer_address)
 transaction = contract.constructor().build_transaction({
     'from': deployer_address,
     'nonce': nonce,
-    'gas': 3000000,
+    'gas': 1596378,
     'gasPrice': web3.to_wei('10', 'gwei')
 })
 
