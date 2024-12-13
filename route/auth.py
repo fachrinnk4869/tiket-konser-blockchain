@@ -34,17 +34,17 @@ def init_db():
                             status TEXT,
                             sign TEXT
                         )''')  # Status: "jual" or "beli"
-        cursor.execute('''CREATE TABLE IF NOT EXISTS tokens (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            token TEXT,
-                            ticket_id TEXT
-                        )''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             username TEXT UNIQUE NOT NULL,
                             password TEXT NOT NULL,
                             role TEXT NOT NULL
                         )''')  # Stores hashed passwords
+        cursor.execute("""CREATE TABLE IF NOT EXISTS transactions (
+                            id INTEGER PRIMARY KEY,
+                            ticket_id TEXT,
+                            hash TEXT
+                        )""")
         conn.commit()
 
 

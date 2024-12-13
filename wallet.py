@@ -21,12 +21,13 @@ class Owner:
             return file.read()
 
     @staticmethod
-    def get_private_key(owner):
+    def get_private_key(owner, import_key=True):
         # logging.warning(f"halo {owner}")
         with open(f'./keys/private_{owner}.pem', 'r') as file:
-            private_key_pem = file.read()
+            private_key = file.read()
             # Convert the PEM string to an RSA key object
-            private_key = RSA.import_key(private_key_pem)
+            if import_key:
+                private_key = RSA.import_key(private_key)
             return private_key
 
 

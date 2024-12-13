@@ -1,7 +1,8 @@
 from route.blockchain_transaction import blockchain_bp, blockchain
 from route.auth import auth_bp, init_db
+from route.smart_contract_api import smart_contract_bp
 import sqlite3
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, request, session, render_template
 from flask_cors import CORS
 
 from wallet import Owner
@@ -12,39 +13,40 @@ DATABASE = 'tickets.db'
 # Initialize database if not exists
 
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="./view")
 CORS(app)  # Enable CORS for all routes
 app.config['SECRET_KEY'] = 'super_secure'
+app.register_blueprint(smart_contract_bp, url_prefix='/smart_contract')
 app.register_blueprint(auth_bp, url_prefix='/auth')
 app.register_blueprint(blockchain_bp, url_prefix='/blockchain')
 init_db()
 
 
-@app.route('/get_user', methods=['GET'])
+@ app.route('/get_user', methods=['GET'])
 def get_user():
     owner = session.get('owner')
     return jsonify({"owner": owner}), 200
 
 
-@app.route('/', methods=['GET'])
+@ app.route('/', methods=['GET'])
 def get_blockchain():
     return jsonify(blockchain.get_chain())
 
 
-@app.route("/get_utxo_pool", methods=["GET"])
+@ app.route("/get_utxo_pool", methods=["GET"])
 def get_utxo_pool():
     utxo_pool = blockchain.get_utxo_pool()
     return jsonify(utxo_pool), 200
 
 
-@app.route("/get_balance", methods=["GET"])
+@ app.route("/get_balance", methods=["GET"])
 def get_balance():
     owner = Owner.get_public_key(session.get('owner', None))
     balance = blockchain.get_balance(owner)
     return jsonify({"balance": balance}), 200
 
 
-@app.route("/get_tickets", methods=["GET"])
+@ app.route("/get_tickets", methods=["GET"])
 def get_tickets():
     owner = Owner.get_public_key(session.get('owner', None))
     tickets = blockchain.get_tickets(owner)
@@ -65,5 +67,15 @@ def get_tickets():
     return jsonify(ticket_list), 200
 
 
+@app.route("/page/navbar", methods=["GET"])
+def get_navbar():
+    return render_template("navbar.html")
+
+
+@app.route("/page", methods=["GET"])
+def get_page():
+    return render_template("index.html")
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)

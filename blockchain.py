@@ -71,7 +71,7 @@ class Blockchain(BlockchainInterface):
         self.longest_chain = []  # To store the longest valid chain
         self.difficulty = difficulty
         self.utxo_pool = {}
-        self.nodes = set(["node1:5000"])
+        self.nodes = set(["localhost:5000"])
 
         # A set to store other node URLs
         self.setup_logging()
@@ -293,6 +293,7 @@ class Blockchain(BlockchainInterface):
         previous_block = self.chain[-1]
         if block.previous_hash != previous_block.hash:
             return False
+        print("Previous hash validated")
         # Check that the block hash is correct and meets difficulty requirements
         result = requests.post(
             f'http://localhost:5000/blockchain/validate_sign', json={'ticket_id': block.to_dict()['transactions'][0]['outputs'][0]['ticket']})
@@ -300,13 +301,16 @@ class Blockchain(BlockchainInterface):
             logging.error(
                 f"Failed to validate signature for block {block.index}. Status Code: {result.status_code}")
             return False
-
+        print("Signature validated")
         if block.hash != self.hash_block(block.index, block.previous_hash, block.nonce):
             return False
+        print("Hash validated")
         if block.hash[:self.difficulty] != "0" * self.difficulty:
             return False
+        print("Difficulty validated")
         if not self.validate_chain():
             return False
+        print("Chain validated")
         # logging.warning(f"UTXO poool = {utxo_pool}")
         self.utxo_pool = self.deserialize_utxo_pool(utxo_pool)
         self.chain.append(block)

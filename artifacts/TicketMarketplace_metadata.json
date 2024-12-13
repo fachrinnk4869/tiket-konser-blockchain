@@ -6,11 +6,6 @@
 	"output": {
 		"abi": [
 			{
-				"inputs": [],
-				"stateMutability": "nonpayable",
-				"type": "constructor"
-			},
-			{
 				"anonymous": false,
 				"inputs": [
 					{
@@ -178,6 +173,47 @@
 			{
 				"inputs": [
 					{
+						"internalType": "address",
+						"name": "user",
+						"type": "address"
+					}
+				],
+				"name": "getTicketsByUser",
+				"outputs": [
+					{
+						"components": [
+							{
+								"internalType": "uint256",
+								"name": "id",
+								"type": "uint256"
+							},
+							{
+								"internalType": "address",
+								"name": "owner",
+								"type": "address"
+							},
+							{
+								"internalType": "uint256",
+								"name": "price",
+								"type": "uint256"
+							},
+							{
+								"internalType": "bool",
+								"name": "isAvailable",
+								"type": "bool"
+							}
+						],
+						"internalType": "struct TicketMarketplace.Ticket[]",
+						"name": "",
+						"type": "tuple[]"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
 						"internalType": "bytes32",
 						"name": "txHash",
 						"type": "bytes32"
@@ -221,6 +257,57 @@
 						"internalType": "struct TicketMarketplace.Transaction",
 						"name": "",
 						"type": "tuple"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "user",
+						"type": "address"
+					}
+				],
+				"name": "getTransactionsByUser",
+				"outputs": [
+					{
+						"components": [
+							{
+								"internalType": "uint256",
+								"name": "ticketId",
+								"type": "uint256"
+							},
+							{
+								"internalType": "address",
+								"name": "buyer",
+								"type": "address"
+							},
+							{
+								"internalType": "address",
+								"name": "seller",
+								"type": "address"
+							},
+							{
+								"internalType": "uint256",
+								"name": "price",
+								"type": "uint256"
+							},
+							{
+								"internalType": "bool",
+								"name": "isCompleted",
+								"type": "bool"
+							},
+							{
+								"internalType": "bytes32",
+								"name": "hash",
+								"type": "bytes32"
+							}
+						],
+						"internalType": "struct TicketMarketplace.Transaction[]",
+						"name": "",
+						"type": "tuple[]"
 					}
 				],
 				"stateMutability": "view",
@@ -364,11 +451,11 @@
 	},
 	"sources": {
 		"contract.sol": {
-			"keccak256": "0x68619814d79bcd4fa59719d5de45b22e26a3349b3755a19cdcee0e89878bc88c",
+			"keccak256": "0xcb1a074941e80202f8e6c25c34cd7f7e532a1dfdb178de57d074a346eda4de98",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://69b45411bb5a4189fc93b4d04e75f0f39cf8c144f4b5667d758d93a7e0366d06",
-				"dweb:/ipfs/QmUevhRav7m64X17CV6sjcfmQWkSQ19vzepHQFfjXWiYXj"
+				"bzz-raw://7a8b3a1478255a0b6032177354df45d119f4b0ca0737e57a2266b8645f7f134f",
+				"dweb:/ipfs/QmQwMk99vg5peVuxaHaztiuL3oEXtJwzYs1GLmWirpB4uw"
 			]
 		}
 	},
