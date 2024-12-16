@@ -451,11 +451,11 @@
 	},
 	"sources": {
 		"contract.sol": {
-			"keccak256": "0x9d7cc0558560d096fb2c61a6563834a6b21615f67833f093c788bae8755e8452",
+			"keccak256": "0xe6d14254c74f603a684eb60cbfd1b7048b67733de9c8394192681f931362a25b",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://0204f01c649748d6ba7172a3af20851d9f3f049533ab75029d50b31571918205",
-				"dweb:/ipfs/QmbJ6rT982URsBz9KhY8KsQdgwYNhWve2y52gW8TWwMzr3"
+				"bzz-raw://2c8e585989213b2945a1b989a1c91790378cff0ed048c0d95deaf5c5eceaa885",
+				"dweb:/ipfs/QmZfHS39DiYRr98R7Aq6eQXpQmHELrLT6sBhBH3Xj2Cp89"
 			]
 		}
 	},

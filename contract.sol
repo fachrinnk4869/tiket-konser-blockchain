@@ -54,8 +54,8 @@ contract TicketMarketplace {
         require(ticket.isAvailable, "Ticket is not available");
         require(ticket.owner != msg.sender, "The owner can't buy this ticket");
 
-        bytes32 txHash = keccak256(abi.encodePacked(ticketId, buyer, msg.sender, ticket.price, block.timestamp));
-        transactions[txHash] = Transaction(ticketId, buyer, msg.sender, ticket.price, false, txHash);
+        bytes32 txHash = keccak256(abi.encodePacked(ticketId, buyer, ticket.owner, ticket.price, block.timestamp));
+        transactions[txHash] = Transaction(ticketId, buyer, ticket.owner, ticket.price, false, txHash);
         transactionHashes.push(txHash);
 
         emit TransactionCreated(ticketId, buyer, msg.sender, ticket.price, txHash);
