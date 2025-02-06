@@ -17,6 +17,7 @@ fetch('http://localhost:5000/blockchain/get_my_tickets')
                 <td class="border px-4 py-2">${ticket.seat}</td>
                 <td class="border px-4 py-2">${ticket.price}</td>
                 <td class="border px-4 py-2">${ticket.status}</td>
+                <td class="border px-4 py-2"><button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onclick="showqr(${ticket.id})">show</button></td>
                 <td class="border px-4 py-2"><button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onclick="jualTiket(${ticket.id})">Jual</button></td>
             `;
             tbody.appendChild(row);
@@ -26,4 +27,7 @@ fetch('http://localhost:5000/blockchain/get_my_tickets')
 
 function jualTiket(ticketId) {
     window.location.href = `/page/jual/${ticketId}`;
+}
+function showqr(ticketId) {
+    window.location.href = `/page/get_qr/${ticketId}`;
 }

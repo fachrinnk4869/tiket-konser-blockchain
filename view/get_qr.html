@@ -1,0 +1,28 @@
+{% extends "navbar.html" %}
+
+{% block title %}Your QR Code for Ticket ID: {{ ticket_id }}{% endblock %}
+
+{% block content %}
+<div class="bg-gray-100 flex items-center justify-center" style="height: 88vh;">
+    <div class="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+        <h1>QR Code Display</h1>
+        <p>Below is the dynamically generated QR Code for Ticket ID: <strong>{{ ticket_id }}</strong>:</p>
+
+        <!-- Add the ticket_id as a data attribute on a container element -->
+        <div id="qr-container" data-ticket-id="{{ ticket_id }}"></div>
+
+        <!-- Image tag for QR code -->
+        <img id="qrcode" alt="QR Code" />
+
+        <script>
+            // Grab the ticket_id from the data attribute
+            const container = document.getElementById("qr-container");
+            const ticketId = container.getAttribute("data-ticket-id");
+
+            // Use the ticket_id to set the QR code image source
+            const qrCodeImg = document.getElementById("qrcode");
+            qrCodeImg.src = `/blockchain/get_qr/${ticketId}`;
+        </script>
+    </div>
+</div>
+{% endblock %}

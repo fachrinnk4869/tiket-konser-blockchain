@@ -142,5 +142,12 @@ def my_transaksi():
     return render_template('mytransaksi.html')
 
 
+@app.route('/page/get_qr/<int:ticket_id>')
+def get_qr(ticket_id):
+    if not session.get('owner'):
+        return redirect("http://localhost:5000/page/login")
+    return render_template('get_qr.html', ticket_id=ticket_id)
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)

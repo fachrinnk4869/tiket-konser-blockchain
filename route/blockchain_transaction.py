@@ -1,5 +1,5 @@
 import logging
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, session, send_file
 from blockchain import Block, Blockchain, Transaction
 import requests
 from transaction.transaction_input import TransactionInput
@@ -8,6 +8,8 @@ from transaction.transaction_output_ticket import TransactionOutputTicket
 from wallet import Owner
 import sqlite3
 import uuid
+import io
+import qrcode
 
 # SQLite database path
 DATABASE = 'tickets.db'
@@ -153,7 +155,13 @@ def add_ticket():
     price = ticket_details.get('price')
     owner_id = ticket_details.get('owner')
     # logging.warning(f"halo {ticket_details}")
-    if not owner_id == 'admin':
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT role FROM users WHERE username = ?",
+                       (session.get('owner'),))
+        result = cursor.fetchone()
+        role = result[0]
+    if not role == 'admin':
         return jsonify({"message": "Unauthorized access"}), 403
     if not ticket_details:
         return jsonify({"message": "Missing required data: ticket_details or node"}), 400
@@ -306,6 +314,38 @@ def process_payment():
         return jsonify({"message": "Payment and Ticket transferred", "response": response}), 200
 
     return jsonify({"message": "Payment failed", "response": response}), 400
+
+
+@blockchain_bp.route('/get_qr/<int:ticket_id>', methods=['GET'])
+def get_qr(ticket_id):
+    owner = Owner.get_public_key(session.get('owner'))
+    if not owner:
+        return jsonify({"message": "Unauthorized access"}), 403
+    # Data to encode in the QR code
+    data = ""
+    for block in reversed(blockchain.chain):
+        for transaction in block.transactions:
+            # Check if the owner matches in the outputs
+            unspent_ticket = blockchain.utxo_pool.get(f"{transaction.tx_id}:0")
+            if unspent_ticket is not None and unspent_ticket.public_key_hash == owner and unspent_ticket.ticket == ticket_id:
+                # logging.warning(f"transaction.outputs = {output.ticket}")
+                data = f"{transaction.tx_id}:0"
+
+    # Generate QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    # Create an image from the QR code
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Save the image to a BytesIO stream
+    img_io = io.BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+
+    # Serve the image as a response
+    return send_file(img_io, mimetype='image/png')
 
 
 @blockchain_bp.route('/get_my_tickets', methods=['GET'])
