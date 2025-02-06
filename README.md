@@ -33,7 +33,11 @@ This App commits to sell and buy ticket among user transparantly, safe, and easy
    ```bash
    docker compose logs -f
    ```
-3. User Login and password
+4. Open Web Browser and browse for this app
+   ```bash
+   http://localhost:5000/page
+   ```
+5. User Login and password
 
    ```bash
    {
