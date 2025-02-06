@@ -1,5 +1,19 @@
 services:
-  node1:
+  ganache:
+    image: trufflesuite/ganache-cli:latest
+    container_name: ganache
+    ports:
+      - "8545:8545"
+    command:
+      - --accounts=10 # Membuat 10 akun
+      - --defaultBalanceEther=100 # Ether default
+      - --mnemonic="your mnemonic here" # Optional: Use a fixed mnemonic
+      - --db=/data  
+    volumes:
+      - ./ganache_data:/data        # Bind mount for data persistence
+    network_mode: "host"  # Connect container directly to the host's network
+
+  node:
     image: blockchain_image
     build: .
     ports:
@@ -12,3 +26,6 @@ services:
       - FLASK_RUN_HOST=0.0.0.0
       - TEMPLATES_AUTO_RELOAD=True
     network_mode: "host"  # Connect container directly to the host's network
+    depends_on:
+      - ganache  # Ensure ganache starts before node1
+    restart: unless-stopped  # Ensure the service restarts unless manually stopped

@@ -3,7 +3,7 @@ from route.blockchain_transaction import blockchain_bp, blockchain
 from route.auth import auth_bp, init_db
 from route.smart_contract_api import smart_contract_bp
 import sqlite3
-from flask import Flask, jsonify, request, session, render_template
+from flask import Flask, jsonify, request, session, render_template, redirect
 from flask_cors import CORS
 
 from wallet import Owner
@@ -72,21 +72,21 @@ def get_tickets():
 @app.route("/page/navbar", methods=["GET"])
 def get_navbar():
     if not session.get('owner'):
-        return requests.get("http://localhost:5000/page/login")
+        return redirect("http://localhost:5000/page/login")
     return render_template("navbar.html")
 
 
 @app.route("/page", methods=["GET"])
 def get_page():
     if not session.get('owner'):
-        return requests.get("http://localhost:5000/page/login")
+        return redirect("http://localhost:5000/page/login")
     return render_template("index.html")
 
 
 @app.route('/page/beli/<int:ticket_id>')
 def beli_ticket(ticket_id):
     if not session.get('owner'):
-        return requests.get("http://localhost:5000/page/login")
+        return redirect("http://localhost:5000/page/login")
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,))
@@ -107,7 +107,7 @@ def beli_ticket(ticket_id):
 @app.route('/page/jual/<int:ticket_id>')
 def jual_ticket(ticket_id):
     if not session.get('owner'):
-        return requests.get("http://localhost:5000/page/login")
+        return redirect("http://localhost:5000/page/login")
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,))
@@ -128,7 +128,7 @@ def jual_ticket(ticket_id):
 @app.route('/page/mytiket')
 def my_ticket():
     if not session.get('owner'):
-        return requests.get("http://localhost:5000/page/login")
+        return redirect("http://localhost:5000/page/login")
     return render_template('mytiket.html')
 
 

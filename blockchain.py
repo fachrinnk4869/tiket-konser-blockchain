@@ -162,9 +162,8 @@ class Blockchain(BlockchainInterface):
             for transaction in block.transactions:
                 # Check if the owner matches in the outputs
                 for i, output in enumerate(transaction.outputs):
-                    logging.warning(f"transaction.outputs = {output.ticket}")
                     logging.warning(f"ticket = {ticket}")
-                    if int(output.ticket) == int(ticket) and isinstance(output, TransactionOutputTicket):
+                    if isinstance(output, TransactionOutputTicket) and int(output.ticket) == int(ticket):
                         return output.public_key_hash, i, transaction.tx_id
         return None, None, None  # Return None if no transaction is found
 
